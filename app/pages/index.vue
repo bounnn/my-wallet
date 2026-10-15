@@ -147,14 +147,13 @@ function showDetails(t: Transaction) {
 
 <template>
   <div class="px-5 pt-[max(env(safe-area-inset-top),0.75rem)]">
-    <!-- Top bar: logo + month picker (filters the whole screen) -->
-    <header class="flex h-12 items-center justify-between">
-      <img src="/logo.svg" alt="My Wallet" class="size-9 rounded-full" />
+    <!-- Top bar: month picker on the right (filters the whole screen) -->
+    <header class="flex h-12 items-center justify-end">
       <MonthPicker v-model="pickedMonth" />
     </header>
 
     <!-- Hero: total balance + this month's income and expenses -->
-    <WalletCard :name="cardName" :currency="currency" :balance="balance" label="Total balance" class="mt-4">
+    <WalletCard :name="cardName" :currency="currency" :balance="balance" label="Total balance" tilt class="mt-4">
       <div class="mt-4 grid grid-cols-2 gap-3 border-t border-white/15 pt-3">
         <div class="flex min-w-0 items-center gap-2.5">
           <span class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/12">

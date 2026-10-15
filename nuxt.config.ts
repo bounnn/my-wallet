@@ -19,8 +19,10 @@ export default defineNuxtConfig({
         { name: "color-scheme", content: "dark" },
         {
           name: "viewport",
-          // resizes-content: Android shrinks the page for the keyboard, keeping bottom actions visible
-          content: "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content",
+          // resizes-content: Android shrinks the page for the keyboard, keeping bottom actions visible.
+          // No zoom (app-like); iOS ignores user-scalable, see plugins/no-zoom.client.ts
+          content:
+            "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content",
         },
         {
           name: "apple-mobile-web-app-status-bar-style",
@@ -53,6 +55,8 @@ export default defineNuxtConfig({
     devOptions: {
       enabled: true,
       type: "module",
+      // The dev service worker has no built files to precache, so workbox warns about every glob
+      suppressWarnings: true,
     },
   },
 });

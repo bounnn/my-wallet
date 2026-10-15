@@ -156,11 +156,11 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
                 class="[transform:rotateX(14deg)_rotateZ(-8deg)]"
               />
             </div>
-            <div class="coin-float eth-coin absolute top-[18%] right-[8%] flex size-14 items-center justify-center rounded-full">
-              <EthGlyph class="size-8" />
+            <div class="coin-float metal-coin absolute top-[18%] right-[8%] flex size-14 items-center justify-center rounded-full">
+              <SparkGlyph class="size-8" />
             </div>
-            <div class="coin-float-slow eth-coin absolute bottom-[20%] left-[6%] flex size-9 items-center justify-center rounded-full">
-              <EthGlyph class="size-5" />
+            <div class="coin-float-slow metal-coin absolute bottom-[20%] left-[6%] flex size-9 items-center justify-center rounded-full">
+              <SparkGlyph class="size-5" />
             </div>
           </div>
 

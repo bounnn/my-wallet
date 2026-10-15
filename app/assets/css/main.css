@@ -54,9 +54,10 @@
   --ui-border-accented: rgb(255 255 255 / 0.12);
 }
 
-/* App-like touch: fast repeated taps (keypad) don't trigger double-tap zoom; pinch-zoom still works */
+/* App-like touch, no zoom at all: scrolling only, so no pinch-zoom and no double-tap zoom on fast repeated
+   taps (keypad). iOS Safari doesn't fully honor this, see plugins/no-zoom.client.ts */
 html {
-  touch-action: manipulation;
+  touch-action: pan-x pan-y;
 }
 
 /* iOS zooms into any focused field under 16px; unlayered so it wins over text-sm/text-xs utilities */
@@ -103,8 +104,8 @@ html {
     background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 0.08) 45%, transparent 60%);
   }
 
-  /* Ethereum-style coin in steel-blue / silver metal (navy family, no violet) */
-  .eth-coin {
+  /* Coin with a spark, in steel-blue / silver metal (navy family, no violet) */
+  .metal-coin {
     color: #fff;
     background:
       radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.8) 0%, transparent 30%),
