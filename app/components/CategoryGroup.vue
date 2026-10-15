@@ -11,6 +11,8 @@ const props = defineProps<{
   currency: string;
 }>();
 const open = defineModel<boolean>("open", { default: false });
+// Tapping a transaction opens its details
+defineEmits<{ select: [transaction: Transaction] }>();
 
 const color = computed<CategoryColor>(() => props.category?.color ?? "primary");
 const count = computed(() => props.items.length);
@@ -65,22 +67,28 @@ const barFill = computed(() => ({
 
     <template #content>
       <ul class="divide-y divide-default border-t border-default">
-        <li v-for="t in items" :key="t.id" class="flex items-center gap-3 px-4 py-3">
-          <div class="min-w-0 flex-1">
-            <p v-if="t.note" class="truncate font-medium text-highlighted">{{ t.note }}</p>
-            <p :class="t.note ? 'text-sm text-muted' : 'font-medium text-highlighted'" class="tabular-nums">
-              {{ weekdayLabel(t.date) }}
-            </p>
-          </div>
-          <MoneyAmount
-            :amount="t.type === 'income' ? t.amount : -t.amount"
-            :currency="currency"
-            signed
-            hide-currency
-            align="end"
-            class="shrink-0"
-            :amount-class="['font-semibold', t.type === 'income' ? 'text-success' : 'text-highlighted'].join(' ')"
-          />
+        <li v-for="t in items" :key="t.id">
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-elevated/60"
+            @click="$emit('select', t)"
+          >
+            <div class="min-w-0 flex-1">
+              <p v-if="t.note" class="truncate font-medium text-highlighted">{{ t.note }}</p>
+              <p :class="t.note ? 'text-sm text-muted' : 'font-medium text-highlighted'" class="tabular-nums">
+                {{ weekdayLabel(t.date) }}
+              </p>
+            </div>
+            <MoneyAmount
+              :amount="t.type === 'income' ? t.amount : -t.amount"
+              :currency="currency"
+              signed
+              hide-currency
+              align="end"
+              class="shrink-0"
+              :amount-class="['font-semibold', t.type === 'income' ? 'text-success' : 'text-highlighted'].join(' ')"
+            />
+          </button>
         </li>
       </ul>
     </template>

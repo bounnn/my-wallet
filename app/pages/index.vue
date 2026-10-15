@@ -134,6 +134,15 @@ const categorySections = computed(() =>
 // One category open at a time, all closed to start so the list reads as a summary
 const openCategory = ref<string | null>(null);
 watch(pickedMonth, () => (openCategory.value = null));
+
+// Tapping a transaction opens its details (edit / delete). Kept as the tapped copy so the
+// modal still has it while closing after a delete.
+const selected = shallowRef<Transaction>();
+const detailsOpen = ref(false);
+function showDetails(t: Transaction) {
+  selected.value = t;
+  detailsOpen.value = true;
+}
 </script>
 
 <template>
@@ -221,6 +230,7 @@ watch(pickedMonth, () => (openCategory.value = null));
           :category-by-id="categoryById"
           :wallet-by-id="walletById"
           @update:open="openWeek = $event ? week.key : null"
+          @select="showDetails"
         />
       </div>
 
@@ -248,10 +258,19 @@ watch(pickedMonth, () => (openCategory.value = null));
               :items="group.items"
               :currency="currency"
               @update:open="openCategory = $event ? group.key : null"
+              @select="showDetails"
             />
           </div>
         </div>
       </template>
     </section>
+
+    <TransactionModal
+      v-model:open="detailsOpen"
+      :transaction="selected"
+      :category="selected && categoryById.get(selected.categoryId)"
+      :wallet="selected && walletById.get(selected.accountId)"
+      :show-wallet="(wallets?.length ?? 0) > 1"
+    />
   </div>
 </template>

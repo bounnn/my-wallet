@@ -21,16 +21,7 @@ const now = new Date();
 
 type Status = { tone: "success" | "error" | "info"; icon: string; text: string };
 
-// Saved per goal: its starting amount, plus money added (expenses in its category) minus money taken out
-// (incomes), from wallets in the goal's currency
-function savedFor(g: Goal) {
-  let saved = g.initialSaved;
-  for (const t of transactions.value ?? []) {
-    if (t.categoryId !== g.categoryId || walletById.value.get(t.accountId)?.currency !== g.currency) continue;
-    saved += t.type === "expense" ? t.amount : -t.amount;
-  }
-  return saved;
-}
+const savedFor = (g: Goal) => goalSaved(g, transactions.value ?? [], walletById.value);
 
 // Unfinished goals first, oldest first within each group
 const goalCards = computed(() =>

@@ -8,6 +8,9 @@ import * as v from "valibot";
 
 definePageMeta({ layout: false });
 
+// /add?id=12 edits that transaction instead of adding a new one
+const editId = Number(useRoute().query.id) || undefined;
+
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 
@@ -31,13 +34,22 @@ const wallet = computed(() =>
   wallets.value?.find((w) => w.id === accountId.value),
 );
 const currency = computed(() => wallet.value?.currency ?? "USD");
+// The amount was typed for the old currency's decimals, so a different currency starts it over
+function pickWallet(w: Account) {
+  if (w.currency !== currency.value) amountText.value = "";
+  accountId.value = w.id;
+}
+// Editing a goal's money only offers wallets in the goal's currency, the only ones it counts
+const walletChoices = computed(() =>
+  (wallets.value ?? []).filter((w) => !goal.value || w.currency === goal.value.currency),
+);
 const walletItems = computed(() =>
-  (wallets.value ?? []).map((w) => ({
+  walletChoices.value.map((w) => ({
     type: "checkbox" as const,
     label: w.name,
     suffix: w.currency,
     checked: w.id === accountId.value,
-    onUpdateChecked: () => (accountId.value = w.id),
+    onUpdateChecked: () => pickWallet(w),
   })),
 );
 
@@ -55,7 +67,6 @@ const amountDisplay = computed(() =>
     ? formatExpression(amountText.value)
     : formatAmountInput(amountText.value),
 );
-watch(currency, () => (amountText.value = ""));
 
 // --- Category: picked in a modal ---
 const categoryId = ref<number>();
@@ -63,7 +74,11 @@ const categoryOpen = ref(false);
 const category = computed(() =>
   categories.value?.find((c) => c.id === categoryId.value),
 );
-watch(type, () => (categoryId.value = undefined));
+// Categories are per type, so switching type clears the pick
+function setType(value: Transaction["type"]) {
+  if (value !== type.value) categoryId.value = undefined;
+  type.value = value;
+}
 
 // --- Date: today by default; Today / Yesterday are one tap, other days in a calendar modal ---
 const now = new Date();
@@ -128,6 +143,27 @@ watch(
 // Keep the screen (and its Save button) above the on-screen keyboard
 const viewport = useVisualViewport();
 
+// --- Edit: fill the form from the saved transaction; a missing one (deleted meanwhile) goes home ---
+const editing = shallowRef<Transaction>();
+// Money added to / taken out of a goal: type and category stay the goal's, so it keeps counting there
+const goal = shallowRef<Goal>();
+onMounted(async () => {
+  if (editId === undefined) return;
+  const t = await db.transactions.get(editId);
+  if (!t) return navigateTo("/", { replace: true });
+  const w = await db.accounts.get(t.accountId);
+  editing.value = t;
+  goal.value = await db.goals.where("categoryId").equals(t.categoryId).first();
+  type.value = t.type;
+  accountId.value = t.accountId;
+  categoryId.value = t.categoryId;
+  amountText.value = String(fromMinor(t.amount, w?.currency ?? currency.value));
+  pickedDay.value = new CalendarDate(t.date.getFullYear(), t.date.getMonth() + 1, t.date.getDate());
+  note.value = t.note ?? "";
+  // The amount is already there, so show the whole form rather than the keypad
+  keypadOpen.value = false;
+});
+
 // --- Save ---
 const schema = v.object({
   amount: v.pipe(v.number(), v.minValue(1, "Enter an amount above 0")),
@@ -170,8 +206,24 @@ async function save() {
     return;
   }
 
-  // The picked day at the current time, so same-day entries keep their order
-  const time = new Date();
+  // A goal's saved amount can't go below 0 (same rule as taking money out on the plan screen)
+  if (goal.value) {
+    const others = await loadGoalSaved(goal.value, editing.value?.id);
+    const amount = result.output.amount;
+    if (others + (type.value === "expense" ? amount : -amount) < 0) {
+      errors.value.amount = [
+        type.value === "income"
+          ? `Only ${formatMoney(Math.max(others, 0), goal.value.currency)} saved`
+          : `At least ${formatMoney(-others, goal.value.currency)}, it was taken out since`,
+      ];
+      return;
+    }
+  }
+
+  // The picked day at the current time, so same-day entries keep their order.
+  // An edit keeps the transaction's own time.
+  const now = new Date();
+  const time = editing.value?.date ?? now;
   const day = pickedDate.value;
   const date = new Date(
     day.getFullYear(),
@@ -184,17 +236,18 @@ async function save() {
 
   saving.value = true;
   try {
-    await db.transactions.add({
+    const fields = {
       accountId: result.output.accountId,
       categoryId: result.output.categoryId,
       type: type.value,
       amount: result.output.amount,
       note: result.output.note || undefined,
       date,
-      createdAt: time,
-    });
+    };
+    if (editing.value) await db.transactions.update(editing.value.id, fields);
+    else await db.transactions.add({ ...fields, createdAt: now });
     toast.add({
-      title: type.value === "income" ? "Income added" : "Expense added",
+      title: editing.value ? "Changes saved" : type.value === "income" ? "Income added" : "Expense added",
       description: formatMoney(result.output.amount, currency.value),
       color: "success",
       icon: "i-lucide-circle-check",
@@ -249,9 +302,16 @@ const chip = (active: boolean) =>
       <h1
         class="flex-1 truncate font-display text-lg font-semibold tracking-tight text-highlighted"
       >
-        Add new
+        {{ editId ? "Edit" : "Add new" }}
       </h1>
+      <span
+        v-if="goal"
+        class="shrink-0 rounded-full bg-elevated px-3 py-1 text-xs font-medium text-toned"
+      >
+        {{ type === "expense" ? "Added to goal" : "Taken out of goal" }}
+      </span>
       <UTabs
+        v-else
         :model-value="type"
         :items="types"
         :content="false"
@@ -259,7 +319,7 @@ const chip = (active: boolean) =>
         size="xs"
         aria-label="Transaction type"
         class="w-40 shrink-0"
-        @update:model-value="type = $event as Transaction['type']"
+        @update:model-value="setType($event as Transaction['type'])"
       />
     </header>
 
@@ -322,10 +382,11 @@ const chip = (active: boolean) =>
           </div>
         </div>
 
-        <!-- 2. Category: opens the category modal -->
+        <!-- 2. Category: opens the category modal (fixed for a goal's money) -->
         <button
           type="button"
           class="flex w-full items-center gap-3 px-4 py-3 text-left"
+          :disabled="!!goal"
           @click="categoryOpen = true"
         >
           <IconTile
@@ -350,7 +411,7 @@ const chip = (active: boolean) =>
               class="block text-xs"
               :class="errors.categoryId ? 'text-error' : 'text-muted'"
             >
-              {{ errors.categoryId?.[0] ?? "Category" }}
+              {{ errors.categoryId?.[0] ?? (goal ? "Goal" : "Category") }}
             </span>
             <span
               class="block truncate font-medium"
@@ -359,6 +420,7 @@ const chip = (active: boolean) =>
             >
           </span>
           <UIcon
+            v-if="!goal"
             name="i-lucide-chevron-right"
             class="size-5 shrink-0 text-dimmed"
           />
@@ -410,7 +472,7 @@ const chip = (active: boolean) =>
         </div>
 
         <UDropdownMenu
-          v-if="(wallets?.length ?? 0) > 1"
+          v-if="walletChoices.length > 1"
           :items="walletItems"
           :content="{ align: 'end' }"
         >
@@ -478,7 +540,7 @@ const chip = (active: boolean) =>
         <UButton
           type="submit"
           form="add-transaction"
-          :label="type === 'income' ? 'Add income' : 'Add expense'"
+          :label="editId ? 'Save changes' : type === 'income' ? 'Add income' : 'Add expense'"
           size="xl"
           block
           :loading="saving"

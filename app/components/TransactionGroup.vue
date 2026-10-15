@@ -12,6 +12,7 @@ const props = defineProps<{
   hideCurrency?: boolean;
 }>();
 const open = defineModel<boolean>("open", { default: false });
+defineEmits<{ select: [transaction: Transaction] }>();
 
 const total = computed(() => props.days.reduce((s, d) => s + d.total, 0));
 const count = computed(() => props.days.reduce((s, d) => s + d.items.length, 0));
@@ -70,6 +71,7 @@ const formatSigned = (minor: number) => `${minor > 0 ? "+" : ""}${formatAmount(m
             :category="categoryById.get(t.categoryId)"
             :wallet="walletById.get(t.accountId)"
             :hide-currency="hideCurrency"
+            @select="$emit('select', $event)"
           />
         </ul>
       </div>
