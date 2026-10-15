@@ -48,15 +48,7 @@ function pickWallet(w: Account) {
 const walletChoices = computed(() =>
   (wallets.value ?? []).filter((w) => !goal.value || w.id === goal.value.accountId),
 );
-const walletItems = computed(() =>
-  walletChoices.value.map((w) => ({
-    type: "checkbox" as const,
-    label: w.name,
-    suffix: w.currency,
-    checked: w.id === accountId.value,
-    onUpdateChecked: () => pickWallet(w),
-  })),
-);
+const walletOpen = ref(false);
 
 // --- Amount: a number, or a calculator expression like "12+3×2" that only becomes
 // the amount once = is pressed (the keypad then replaces it with the result) ---
@@ -297,7 +289,7 @@ const chip = (active: boolean) =>
     <!-- Top bar: back + title, expense / income switch on the right (one tap, no menu) -->
     <header class="flex h-12 shrink-0 items-center gap-2 px-4">
       <UButton
-        icon="i-lucide-arrow-left"
+        icon="i-lucide-chevron-left"
         color="neutral"
         variant="ghost"
         aria-label="Back"
@@ -311,7 +303,7 @@ const chip = (active: boolean) =>
       </h1>
       <span
         v-if="goal"
-        class="shrink-0 rounded-full bg-elevated px-3 py-1 text-xs font-medium text-toned"
+        class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-xs font-medium text-toned"
       >
         {{ type === "expense" ? "Added to goal" : "Taken out of goal" }}
       </span>
@@ -345,7 +337,7 @@ const chip = (active: boolean) =>
               {{ errors.amount?.[0] ?? "Amount" }}
             </span>
             <span
-              class="rounded-md bg-elevated px-2 py-0.5 text-xs font-medium text-toned"
+              class="rounded-md bg-elevated px-1.5 py-0.5 text-xs font-medium text-toned"
               >{{ currency }}</span
             >
           </div>
@@ -476,26 +468,22 @@ const chip = (active: boolean) =>
           </div>
         </div>
 
-        <UDropdownMenu
+        <button
           v-if="walletChoices.length > 1"
-          :items="walletItems"
-          :content="{ align: 'end' }"
+          type="button"
+          class="flex h-12 w-full items-center gap-3 px-4 text-left"
+          @click="walletOpen = true"
         >
-          <button
-            type="button"
-            class="flex h-12 w-full items-center gap-3 px-4 text-left"
-          >
-            <UIcon name="i-lucide-wallet" class="size-5 shrink-0 text-dimmed" />
-            <span class="flex-1 text-sm text-muted">Wallet</span>
-            <span class="truncate text-sm font-medium text-highlighted">{{
-              wallet?.name
-            }}</span>
-            <UIcon
-              name="i-lucide-chevron-right"
-              class="size-4 shrink-0 text-dimmed"
-            />
-          </button>
-        </UDropdownMenu>
+          <UIcon name="i-lucide-wallet" class="size-5 shrink-0 text-dimmed" />
+          <span class="flex-1 text-sm text-muted">Wallet</span>
+          <span class="truncate text-sm font-medium text-highlighted">{{
+            wallet?.name
+          }}</span>
+          <UIcon
+            name="i-lucide-chevron-right"
+            class="size-4 shrink-0 text-dimmed"
+          />
+        </button>
 
         <label class="flex min-h-12 items-start gap-3 px-4 py-3">
           <UIcon
@@ -588,6 +576,13 @@ const chip = (active: boolean) =>
       :account-id="accountId"
       :selected-id="categoryId"
       @select="categoryId = $event"
+    />
+
+    <WalletSelectModal
+      v-model:open="walletOpen"
+      :wallets="walletChoices"
+      :selected-id="accountId"
+      @select="pickWallet"
     />
 
     <UModal v-model:open="calendarOpen" title="Pick a date">

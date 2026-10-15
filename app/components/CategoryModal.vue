@@ -82,7 +82,7 @@ async function create() {
     <template #header="{ close }">
       <UButton
         v-if="view === 'new'"
-        icon="i-lucide-arrow-left"
+        icon="i-lucide-chevron-left"
         color="neutral"
         variant="ghost"
         aria-label="Back to categories"

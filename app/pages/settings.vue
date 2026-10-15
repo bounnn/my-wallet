@@ -163,7 +163,7 @@ async function erase() {
           <UButton label="New wallet" icon="i-lucide-plus" color="neutral" variant="soft" size="lg" class="h-11 px-4" @click="openWallet()" />
         </div>
 
-        <ul class="mt-3 divide-y divide-default overflow-hidden rounded-2xl bg-muted">
+        <ul class="surface-card mt-3 divide-y divide-default overflow-hidden rounded-2xl">
           <li v-for="row in walletRows" :key="row.wallet.id">
             <button
               type="button"
@@ -183,7 +183,7 @@ async function erase() {
                   </span>
                 </span>
                 <span class="mt-0.5 flex items-baseline gap-1.5 text-sm tabular-nums">
-                  <span :class="row.balance < 0 ? 'text-error' : 'text-toned'">{{ formatMoney(row.balance, row.wallet.currency) }}</span>
+                  <span :class="row.balance < 0 ? 'text-error' : 'text-toned'">{{ formatAmount(row.balance, row.wallet.currency) }}</span>
                   <span class="rounded-md bg-elevated px-1.5 text-xs font-medium text-muted">{{ row.wallet.currency }}</span>
                 </span>
               </span>
@@ -206,7 +206,7 @@ async function erase() {
           @update:model-value="categoryType = $event as Category['type']"
         />
 
-        <div class="mt-4 grid grid-cols-4 gap-1 rounded-2xl bg-muted p-2">
+        <div class="surface-card mt-4 grid grid-cols-4 gap-1 rounded-2xl p-2">
           <button
             v-for="c in typeCategories"
             :key="c.id"
@@ -234,7 +234,7 @@ async function erase() {
       <!-- Backup: the only copy of the data is on this device -->
       <section class="mt-8">
         <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Backup</h2>
-        <div class="mt-3 divide-y divide-default overflow-hidden rounded-2xl bg-muted">
+        <div class="surface-card mt-3 divide-y divide-default overflow-hidden rounded-2xl">
           <button
             type="button"
             class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-elevated disabled:opacity-60"
@@ -271,7 +271,7 @@ async function erase() {
       <section class="mt-8">
         <button
           type="button"
-          class="flex w-full items-center gap-3 rounded-2xl bg-muted px-4 py-3 text-left transition-colors hover:bg-elevated"
+          class="surface-card flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-transform active:scale-[0.99] motion-reduce:active:scale-100"
           @click="eraseOpen = true"
         >
           <IconTile icon="i-lucide-trash-2" color="error" size="sm" />

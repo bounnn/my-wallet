@@ -149,7 +149,7 @@ async function remove() {
             <span class="flex-1 text-sm text-muted">Currency</span>
             <span
               v-if="currencyLocked"
-              class="rounded-md bg-accented px-2 py-0.5 text-xs font-medium text-toned"
+              class="rounded-md bg-accented px-1.5 py-0.5 text-xs font-medium text-toned"
             >{{ currency }}</span>
             <USelectMenu
               v-else

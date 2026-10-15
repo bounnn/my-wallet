@@ -2,21 +2,11 @@
 // Header pill to switch the active wallet (home and plan show one wallet at a time); hidden with only one wallet
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { wallet, pick } = useActiveWallet(wallets);
-
-const items = computed(() => [
-  (wallets.value ?? []).map((w) => ({
-    type: "checkbox" as const,
-    label: w.name,
-    suffix: w.currency,
-    checked: w.id === wallet.value?.id,
-    onUpdateChecked: () => pick(w),
-  })),
-  [{ label: "Manage wallets", icon: "i-lucide-settings-2", to: "/settings" }],
-]);
+const open = ref(false);
 </script>
 
 <template>
-  <UDropdownMenu v-if="(wallets?.length ?? 0) > 1" :items="items" :content="{ align: 'start' }">
+  <template v-if="(wallets?.length ?? 0) > 1">
     <UButton
       :label="wallet?.name"
       icon="i-lucide-wallet"
@@ -25,6 +15,8 @@ const items = computed(() => [
       variant="subtle"
       aria-label="Switch wallet"
       class="max-w-44"
+      @click="open = true"
     />
-  </UDropdownMenu>
+    <WalletSelectModal v-model:open="open" :wallets="wallets ?? []" :selected-id="wallet?.id" manage @select="pick" />
+  </template>
 </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CalendarDate, type DateValue } from "@internationalized/date";
 
-// Month pill + popover calendar (UCalendar type="month"); future months are disabled
+// Month pill that opens a month calendar in a modal (UCalendar type="month"); future months are disabled
 const month = defineModel<CalendarDate>({ required: true });
 
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
@@ -19,23 +19,24 @@ function onPick(value: DateValue | undefined) {
 </script>
 
 <template>
-  <UPopover v-model:open="open" :content="{ align: 'end', sideOffset: 8 }">
-    <UButton
-      :label="monthFormat.format(new Date(month.year, month.month - 1, 1))"
-      icon="i-lucide-calendar"
-      trailing-icon="i-lucide-chevron-down"
-      color="neutral"
-      variant="subtle"
-      class="tabular-nums"
-    />
-    <template #content>
+  <UButton
+    :label="monthFormat.format(new Date(month.year, month.month - 1, 1))"
+    icon="i-lucide-calendar"
+    trailing-icon="i-lucide-chevron-down"
+    color="neutral"
+    variant="subtle"
+    class="tabular-nums"
+    @click="open = true"
+  />
+  <UModal v-model:open="open" title="Pick a month">
+    <template #body>
       <UCalendar
         type="month"
         :model-value="month"
         :is-month-disabled="isFutureMonth"
-        class="p-2"
+        class="mx-auto"
         @update:model-value="onPick"
       />
     </template>
-  </UPopover>
+  </UModal>
 </template>

@@ -161,7 +161,7 @@ const barFill = (color: CategoryColor, share: number) => ({
               :aria-label="v.label"
               :aria-pressed="view === v.value"
               class="flex size-8 items-center justify-center rounded-full transition-colors"
-              :class="view === v.value ? 'bg-primary/25 text-navy-100' : 'text-muted hover:text-toned'"
+              :class="view === v.value ? 'bg-primary/20 text-navy-100' : 'text-muted hover:text-toned'"
               @click="view = v.value"
             >
               <UIcon :name="v.icon" class="size-4" />

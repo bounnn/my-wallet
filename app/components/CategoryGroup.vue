@@ -44,7 +44,7 @@ const barFill = computed(() => ({
               {{ formatAmount(total, currency) }}
             </p>
           </div>
-          <div class="mt-0.5 flex items-center justify-between gap-3 text-sm text-muted tabular-nums">
+          <div class="mt-1 flex items-center justify-between gap-3 text-sm text-muted tabular-nums">
             <p>{{ Math.round(share * 100) }}% of {{ type === "income" ? "income" : "expenses" }}</p>
             <p class="flex shrink-0 items-center gap-1">
               {{ count }} {{ count === 1 ? "transaction" : "transactions" }}
@@ -57,7 +57,7 @@ const barFill = computed(() => ({
           </div>
         </div>
       </div>
-      <div class="mt-3 h-2 overflow-hidden rounded-full" :style="barTrack">
+      <div class="mt-4 h-3 overflow-hidden rounded-full" :style="barTrack">
         <div
           class="bar-grow h-full rounded-full shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
           :style="barFill"
