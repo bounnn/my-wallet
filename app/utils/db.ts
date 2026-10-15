@@ -32,6 +32,15 @@ export interface Transaction {
   createdAt: Date;
 }
 
+// One day's transactions in a list, with its net total (minor units)
+export interface TransactionDay {
+  key: string;
+  date: Date;
+  label: string;
+  total: number;
+  items: Transaction[];
+}
+
 export const db = new Dexie("my-wallet") as Dexie & {
   accounts: EntityTable<Account, "id">;
   categories: EntityTable<Category, "id">;

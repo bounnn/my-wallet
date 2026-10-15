@@ -20,6 +20,14 @@ export function formatMoney(minor: number, currency: string) {
   );
 }
 
+// Number only, no currency sign, with the currency's decimals (e.g. "1,250.50"), for when the currency is shown apart
+export function formatAmount(minor: number, currency: string) {
+  const digits = currencyDigits(currency);
+  return new Intl.NumberFormat(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(
+    fromMinor(minor, currency),
+  );
+}
+
 // Formatted pieces, so the cents can be styled lighter than the whole amount (e.g. $87,457.85)
 export function formatMoneyParts(minor: number, currency: string) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency })

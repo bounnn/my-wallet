@@ -17,12 +17,13 @@ withDefaults(defineProps<{ name: string; currency: string; balance: number; labe
       </div>
 
       <div class="mt-auto">
-        <p class="text-sm text-white/70">{{ label }}</p>
-        <p class="mt-1 flex items-baseline gap-2">
-          <span class="truncate font-display text-3xl font-bold tracking-tight tabular-nums">
-            {{ formatMoney(balance, currency) }}
-          </span>
-          <span class="text-sm font-medium text-white/70">{{ currency }}</span>
+        <!-- Currency sits in the muted line above the number, like every amount in the app -->
+        <p class="flex items-center gap-2 text-sm text-white/70">
+          {{ label }}
+          <span class="rounded-md bg-white/12 px-1.5 py-0.5 text-xs font-medium text-white/80">{{ currency }}</span>
+        </p>
+        <p class="mt-1 truncate font-display text-3xl font-bold tracking-tight tabular-nums">
+          {{ formatAmount(balance, currency) }}
         </p>
       </div>
 

@@ -5,6 +5,23 @@ export function formatDate(date: Date) {
   return `${dd}/${mm}/${date.getFullYear()}`;
 }
 
+// Midnight on the Monday of the date's week (weeks run Monday → Sunday)
+export function startOfWeek(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - ((date.getDay() + 6) % 7));
+}
+
+// Short DD/MM, e.g. "14/10"
+export function formatDayMonth(date: Date) {
+  return formatDate(date).slice(0, 5);
+}
+
+// Day name inside a week: "Today", "Yesterday", or "Wed 14/10"
+export function weekdayLabel(date: Date) {
+  const label = dayLabel(date);
+  if (label !== formatDate(date)) return label;
+  return `${date.toLocaleDateString(undefined, { weekday: "short" })} ${formatDayMonth(date)}`;
+}
+
 // Relative day name: "Today", "Yesterday", or DD/MM/YYYY
 export function dayLabel(date: Date) {
   const today = new Date();

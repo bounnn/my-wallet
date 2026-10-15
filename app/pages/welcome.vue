@@ -275,8 +275,9 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
                 :class="amountDisplay.length > 9 ? 'text-4xl' : 'text-5xl'"
               >{{ amountDisplay }}</span>
             </p>
-            <span class="mt-3 rounded-full bg-muted px-3 py-1 text-sm text-muted">
-              {{ name }} · {{ currency }}
+            <span class="mt-3 flex items-center gap-2 rounded-full bg-muted py-1 pr-1.5 pl-3 text-sm text-muted">
+              {{ name }}
+              <span class="rounded-full bg-elevated px-2 py-0.5 text-xs font-medium text-toned">{{ currency }}</span>
             </span>
           </div>
 
