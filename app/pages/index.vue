@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DropdownMenuItem } from "@nuxt/ui";
+import { CalendarDate, type DateValue } from "@internationalized/date";
 
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
@@ -9,6 +9,11 @@ const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 const currency = computed(() => wallets.value?.[0]?.currency ?? "USD");
 const walletById = computed(() => new Map((wallets.value ?? []).map((w) => [w.id, w])));
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
+
+// One wallet shows its own name; several are summed into one total card
+const cardName = computed(() =>
+  wallets.value?.length === 1 ? wallets.value[0]!.name : "All wallets",
+);
 
 const signed = (t: Transaction) => (t.type === "income" ? t.amount : -t.amount);
 
@@ -24,21 +29,21 @@ const balance = computed(() =>
     ),
 );
 
-// Month picker
+// Month picker (UCalendar type="month"); future months are disabled
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-const month = ref(startOfMonth(new Date()));
+const now = new Date();
+const thisMonth = new CalendarDate(now.getFullYear(), now.getMonth() + 1, 1);
+const pickedMonth = shallowRef<CalendarDate>(thisMonth);
+const monthPickerOpen = ref(false);
 
-const monthItems = computed<DropdownMenuItem[]>(() =>
-  Array.from({ length: 12 }, (_, i) => {
-    const d = new Date();
-    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    return {
-      label: monthFormat.format(m),
-      onSelect: () => (month.value = m),
-    };
-  }),
-);
+const month = computed(() => new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1));
+const isFutureMonth = (d: DateValue) => d.year * 12 + d.month > thisMonth.year * 12 + thisMonth.month;
+
+function onPickMonth(value: DateValue | undefined) {
+  if (!value) return;
+  pickedMonth.value = new CalendarDate(value.year, value.month, 1);
+  monthPickerOpen.value = false;
+}
 
 const monthTransactions = computed(() => {
   const from = month.value;
@@ -55,20 +60,21 @@ const income = computed(() =>
 const expenses = computed(() =>
   monthTransactions.value.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0),
 );
-const net = computed(() => income.value - expenses.value);
 
-// Transactions grouped by day, newest first
-const dayFormat = new Intl.DateTimeFormat(undefined, {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
+// Transactions grouped by day, newest first ("Today", "Yesterday", "Wed, 14 Oct")
+const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
+function dayLabel(date: Date) {
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return dayFormat.format(date);
+}
 const days = computed(() => {
   const groups = new Map<string, { label: string; total: number; items: Transaction[] }>();
   for (const t of monthTransactions.value) {
     const key = t.date.toDateString();
-    const group = groups.get(key) ?? { label: dayFormat.format(t.date), total: 0, items: [] };
+    const group = groups.get(key) ?? { label: dayLabel(t.date), total: 0, items: [] };
     group.total += signed(t);
     group.items.push(t);
     groups.set(key, group);
@@ -80,109 +86,111 @@ const formatSigned = (minor: number) => `${minor > 0 ? "+" : ""}${formatMoney(mi
 </script>
 
 <template>
-  <div>
-    <!-- Hero: month picker + current balance -->
-    <header class="aurora px-4 pt-[max(env(safe-area-inset-top),1rem)] pb-16 text-white">
-      <div class="grid grid-cols-[2.5rem_1fr_2.5rem] items-center">
-        <img src="/logo.svg" alt="" class="size-10 rounded-full ring-2 ring-white/25" />
-        <div class="justify-self-center">
-          <UDropdownMenu :items="monthItems" :content="{ align: 'center' }">
-            <UButton
-              :label="monthFormat.format(month)"
-              trailing-icon="i-lucide-chevron-down"
-              color="neutral"
-              variant="ghost"
-              class="bg-white/15 text-white hover:bg-white/25 active:bg-white/25"
-            />
-          </UDropdownMenu>
-        </div>
-      </div>
-
-      <div class="mt-8 flex flex-col items-center gap-2 text-center">
-        <p class="text-sm font-medium text-white/75">Current Balance</p>
-        <p class="text-aurora text-[2.75rem] leading-none font-semibold tracking-tight tabular-nums">
-          <span
-            v-for="(part, i) in formatMoneyParts(balance, currency)"
-            :key="i"
-            :class="part.isFraction && 'opacity-55'"
-          >{{ part.value }}</span>
-        </p>
-        <p
-          v-if="monthTransactions.length"
-          class="mt-1 rounded-full bg-white/15 px-3 py-1 text-sm text-white/90 tabular-nums"
-        >
-          {{ formatSigned(net) }} this month
-        </p>
-      </div>
+  <div class="px-5 pt-[max(env(safe-area-inset-top),0.75rem)]">
+    <!-- Top bar: logo + month picker (filters the whole screen) -->
+    <header class="flex h-12 items-center justify-between">
+      <img src="/logo.svg" alt="My Wallet" class="size-9 rounded-full" />
+      <UPopover v-model:open="monthPickerOpen" :content="{ align: 'end', sideOffset: 8 }">
+        <UButton
+          :label="monthFormat.format(month)"
+          icon="i-lucide-calendar"
+          trailing-icon="i-lucide-chevron-down"
+          color="neutral"
+          variant="subtle"
+          class="tabular-nums"
+        />
+        <template #content>
+          <UCalendar
+            type="month"
+            :model-value="pickedMonth"
+            :is-month-disabled="isFutureMonth"
+            class="p-2"
+            @update:model-value="onPickMonth"
+          />
+        </template>
+      </UPopover>
     </header>
 
-    <!-- Content panel overlapping the hero -->
-    <main class="relative -mt-8 space-y-6 rounded-t-4xl border-t border-white/10 bg-default px-4 pt-6">
-      <section class="space-y-3">
-        <h2 class="text-lg font-semibold text-highlighted">Your Money</h2>
-        <div class="grid grid-cols-2 gap-3">
-          <UCard>
-            <IconTile icon="i-lucide-arrow-down-left" color="success" size="sm" />
-            <p class="mt-4 text-sm text-muted">Income</p>
-            <p class="mt-0.5 truncate text-xl font-semibold tabular-nums text-highlighted">
+    <!-- Hero: total balance + this month's income and expenses -->
+    <WalletCard :name="cardName" :currency="currency" :balance="balance" label="Total balance" class="mt-4">
+      <div class="mt-4 grid grid-cols-2 gap-3 border-t border-white/15 pt-3">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/12">
+            <UIcon name="i-lucide-arrow-down-left" class="size-4 text-emerald-300" />
+          </span>
+          <div class="min-w-0">
+            <p class="text-xs text-white/70">Income</p>
+            <p class="truncate font-display text-sm font-semibold tabular-nums">
               {{ formatMoney(income, currency) }}
             </p>
-          </UCard>
-          <UCard>
-            <IconTile icon="i-lucide-arrow-up-right" color="error" size="sm" />
-            <p class="mt-4 text-sm text-muted">Expenses</p>
-            <p class="mt-0.5 truncate text-xl font-semibold tabular-nums text-highlighted">
+          </div>
+        </div>
+        <div class="flex min-w-0 items-center gap-2.5">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/12">
+            <UIcon name="i-lucide-arrow-up-right" class="size-4 text-rose-300" />
+          </span>
+          <div class="min-w-0">
+            <p class="text-xs text-white/70">Expenses</p>
+            <p class="truncate font-display text-sm font-semibold tabular-nums">
               {{ formatMoney(expenses, currency) }}
             </p>
-          </UCard>
-        </div>
-      </section>
-
-      <section class="space-y-3">
-        <h2 class="text-lg font-semibold text-highlighted">Transactions</h2>
-
-        <UEmpty
-          v-if="!days.length"
-          icon="i-lucide-receipt"
-          title="No transactions yet"
-          description="Tap + to add your first income or expense."
-          class="rounded-3xl bg-muted ring ring-default"
-        />
-
-        <div v-for="day in days" :key="day.label" class="space-y-2">
-          <div class="flex items-baseline justify-between text-sm">
-            <span class="text-muted">{{ day.label }}</span>
-            <span class="text-muted">
-              Total <span class="font-semibold tabular-nums text-highlighted">{{ formatSigned(day.total) }}</span>
-            </span>
           </div>
-
-          <UCard v-for="t in day.items" :key="t.id">
-            <div class="flex items-center gap-3">
-              <IconTile
-                :icon="categoryById.get(t.categoryId)?.icon ?? 'i-lucide-tag'"
-                :color="categoryById.get(t.categoryId)?.color"
-              />
-              <div class="min-w-0 flex-1">
-                <p class="truncate font-medium text-highlighted">
-                  {{ categoryById.get(t.categoryId)?.name ?? "Uncategorized" }}
-                </p>
-                <p class="flex items-center gap-1 truncate text-sm text-muted">
-                  <UIcon name="i-lucide-wallet" class="size-3.5 shrink-0" />
-                  {{ walletById.get(t.accountId)?.name }}
-                  <template v-if="t.note"> · {{ t.note }}</template>
-                </p>
-              </div>
-              <span
-                class="font-semibold tabular-nums"
-                :class="t.type === 'income' ? 'text-success' : 'text-error'"
-              >
-                {{ formatSigned(signed(t)) }}
-              </span>
-            </div>
-          </UCard>
         </div>
-      </section>
-    </main>
+      </div>
+    </WalletCard>
+
+    <!-- Transactions -->
+    <section class="mt-8">
+      <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Transactions</h2>
+
+      <!-- Empty: faded placeholder rows hint at the list to come, one short line on top -->
+      <div v-if="!days.length" class="relative mt-3 overflow-hidden rounded-2xl bg-muted">
+        <ul
+          aria-hidden="true"
+          class="divide-y divide-default [mask-image:linear-gradient(to_bottom,black,transparent)]"
+        >
+          <li v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-3">
+            <span class="size-10 shrink-0 rounded-2xl bg-elevated" />
+            <span class="flex-1 space-y-2">
+              <span class="block h-2.5 rounded-full bg-elevated" :class="['w-24', 'w-32', 'w-20'][i - 1]" />
+              <span class="block h-2 w-16 rounded-full bg-elevated/60" />
+            </span>
+            <span class="h-2.5 w-14 rounded-full bg-elevated" />
+          </li>
+        </ul>
+        <p class="absolute inset-x-0 bottom-5 text-center text-sm font-medium text-muted">No transactions yet</p>
+      </div>
+
+      <div v-for="day in days" :key="day.label" class="mt-5">
+        <div class="flex items-baseline justify-between px-1 text-sm">
+          <span class="font-medium text-muted">{{ day.label }}</span>
+          <span class="tabular-nums text-dimmed">{{ formatSigned(day.total) }}</span>
+        </div>
+
+        <ul class="mt-2 divide-y divide-default rounded-2xl bg-muted">
+          <li v-for="t in day.items" :key="t.id" class="flex items-center gap-3 px-4 py-3">
+            <IconTile
+              :icon="categoryById.get(t.categoryId)?.icon ?? 'i-lucide-tag'"
+              :color="categoryById.get(t.categoryId)?.color"
+              size="sm"
+            />
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-medium text-highlighted">
+                {{ categoryById.get(t.categoryId)?.name ?? "Uncategorized" }}
+              </p>
+              <p class="truncate text-sm text-muted">
+                {{ walletById.get(t.accountId)?.name }}<template v-if="t.note"> · {{ t.note }}</template>
+              </p>
+            </div>
+            <span
+              class="shrink-0 font-display font-semibold tabular-nums"
+              :class="t.type === 'income' ? 'text-success' : 'text-highlighted'"
+            >
+              {{ formatSigned(signed(t)) }}
+            </span>
+          </li>
+        </ul>
+      </div>
+    </section>
   </div>
 </template>
