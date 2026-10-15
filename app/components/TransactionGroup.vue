@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Collapsible block of transactions (a week, or Today + Yesterday): header with label, range/count and net total,
+// Collapsible block of transactions (a week): header with label, range/count and net total,
 // then the transactions split by day. Meant to sit inside a .surface-card.
 const props = defineProps<{
   label: string;

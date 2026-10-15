@@ -52,24 +52,13 @@ const expenses = computed(() =>
   monthTransactions.value.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0),
 );
 
-// Category slides: the month's total per category, biggest first. Keyed by type too, since a goal's
-// category has both money added (expense) and taken out (income).
-const categoryTotals = computed(() => {
-  const totals = new Map<string, { category?: Category; type: Transaction["type"]; total: number; count: number }>();
-  for (const t of monthTransactions.value) {
-    const key = `${t.type}-${t.categoryId}`;
-    const entry = totals.get(key) ?? {
-      category: categoryById.value.get(t.categoryId),
-      type: t.type,
-      total: 0,
-      count: 0,
-    };
-    entry.total += t.amount;
-    entry.count++;
-    totals.set(key, entry);
-  }
-  return [...totals.entries()].map(([id, e]) => ({ id, ...e })).sort((a, b) => b.total - a.total);
-});
+// Transactions list: grouped by week (date) or by category
+const views = [
+  { label: "By date", value: "date" },
+  { label: "By category", value: "category" },
+];
+// useState keeps the choice while visiting /add and coming back
+const view = useState<"date" | "category">("home-transactions-view", () => "date");
 
 // Splits newest-first transactions into days ("Today", "Yesterday", "Wed 14/10")
 function groupByDay(list: Transaction[]) {
@@ -86,22 +75,6 @@ function groupByDay(list: Transaction[]) {
   }
   return days;
 }
-
-// Recent (Today + Yesterday) pinned on top while viewing this month; these stay in their week below too.
-// Not limited to the picked month, so yesterday still shows on the 1st.
-const recentDays = computed(() => {
-  if (pickedMonth.value.compare(thisMonth) !== 0) return [];
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  return groupByDay(
-    (transactions.value ?? [])
-      .filter((t) => walletById.value.get(t.accountId)?.currency === currency.value)
-      .filter((t) => t.date >= from && t.date < to)
-      .sort((a, b) => b.date.getTime() - a.date.getTime()),
-  );
-});
-const recentOpen = ref(true);
 
 // Week groups (Monday → Sunday), newest first, each split into days
 const weeks = computed(() => {
@@ -129,6 +102,38 @@ const weeks = computed(() => {
 const openWeek = ref<number | null>();
 const isWeekOpen = (key: number) => (openWeek.value === undefined ? weeks.value[0]?.key : openWeek.value) === key;
 watch(pickedMonth, () => (openWeek.value = undefined));
+
+// Categories split into Expenses and Income sections (a goal's category can be in both), biggest first
+function groupByCategory(type: Transaction["type"], typeTotal: number) {
+  const groups = new Map<number, { key: string; category?: Category; total: number; items: Transaction[] }>();
+  for (const t of monthTransactions.value) {
+    if (t.type !== type) continue;
+    const group = groups.get(t.categoryId) ?? {
+      key: `${type}-${t.categoryId}`,
+      category: categoryById.value.get(t.categoryId),
+      total: 0,
+      items: [],
+    };
+    group.total += t.amount;
+    group.items.push(t);
+    groups.set(t.categoryId, group);
+  }
+  return [...groups.values()]
+    .map((g) => ({ ...g, share: typeTotal ? g.total / typeTotal : 0 }))
+    .sort((a, b) => b.total - a.total);
+}
+const categorySections = computed(() =>
+  [
+    { type: "expense" as const, title: "Expenses", total: expenses.value },
+    { type: "income" as const, title: "Income", total: income.value },
+  ]
+    .map((s) => ({ ...s, groups: groupByCategory(s.type, s.total) }))
+    .filter((s) => s.groups.length),
+);
+
+// One category open at a time, all closed to start so the list reads as a summary
+const openCategory = ref<string | null>(null);
+watch(pickedMonth, () => (openCategory.value = null));
 </script>
 
 <template>
@@ -167,39 +172,22 @@ watch(pickedMonth, () => (openWeek.value = undefined));
       </div>
     </WalletCard>
 
-    <!-- Categories: month total per category, swipe sideways -->
-    <section v-if="categoryTotals.length" class="mt-8">
-      <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Categories</h2>
-      <!-- Separate cards that scroll sideways and bleed to the screen edges -->
-      <ul
-        class="-mx-5 mt-1 flex snap-x snap-mandatory scroll-px-5 gap-3 overflow-x-auto px-5 pt-2 pb-7 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        <li
-          v-for="c in categoryTotals"
-          :key="c.id"
-          class="surface-card flex w-[75%] shrink-0 snap-start flex-col rounded-2xl px-5 py-4"
-        >
-          <div class="flex items-center gap-2">
-            <IconTile :icon="c.category?.icon ?? 'i-lucide-tag'" :color="c.category?.color" size="xs" />
-            <p class="min-w-0 truncate text-sm font-medium text-muted">{{ c.category?.name ?? "Uncategorized" }}</p>
-          </div>
-          <MoneyAmount
-            :amount="c.total"
-            :currency="currency"
-            hide-currency
-            class="mt-5"
-            :amount-class="['text-2xl font-bold tracking-tight', c.type === 'income' ? 'text-success' : 'text-highlighted'].join(' ')"
-          />
-          <p class="mt-1 text-xs text-dimmed">
-            {{ c.count }} {{ c.count === 1 ? "transaction" : "transactions" }}
-          </p>
-        </li>
-      </ul>
-    </section>
-
-    <!-- Transactions -->
-    <section :class="categoryTotals.length ? 'mt-1' : 'mt-8'">
-      <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Transactions</h2>
+    <!-- Transactions: by date (weeks) or by category -->
+    <section class="mt-8">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Transactions</h2>
+        <UTabs
+          v-if="weeks.length"
+          :model-value="view"
+          :items="views"
+          :content="false"
+          variant="pill"
+          size="xs"
+          aria-label="Group transactions"
+          class="w-48 shrink-0"
+          @update:model-value="view = $event as 'date' | 'category'"
+        />
+      </div>
 
       <!-- Empty: faded placeholder rows hint at the list to come, one short line on top -->
       <div v-if="!weeks.length" class="relative mt-3 overflow-hidden rounded-2xl bg-muted">
@@ -219,22 +207,8 @@ watch(pickedMonth, () => (openWeek.value = undefined));
         <p class="absolute inset-x-0 bottom-5 text-center text-sm font-medium text-muted">No transactions yet</p>
       </div>
 
-      <!-- Recent: Today + Yesterday, pinned on top -->
-      <div v-if="recentDays.length" class="surface-card mt-3 rounded-2xl">
-        <TransactionGroup
-          v-model:open="recentOpen"
-          label="Recent"
-          sublabel="Today & yesterday"
-          :days="recentDays"
-          :currency="currency"
-          hide-currency
-          :category-by-id="categoryById"
-          :wallet-by-id="walletById"
-        />
-      </div>
-
-      <!-- Weeks (Monday first) joined in one card, each collapsible; recent days are counted here too -->
-      <div v-if="weeks.length" class="surface-card mt-4 divide-y divide-default rounded-2xl">
+      <!-- Weeks (Monday first) joined in one card, each collapsible -->
+      <div v-if="weeks.length && view === 'date'" class="surface-card mt-3 divide-y divide-default rounded-2xl">
         <TransactionGroup
           v-for="week in weeks"
           :key="week.key"
@@ -249,6 +223,35 @@ watch(pickedMonth, () => (openWeek.value = undefined));
           @update:open="openWeek = $event ? week.key : null"
         />
       </div>
+
+      <!-- Categories: Expenses then Income, one card per category, biggest first -->
+      <template v-if="weeks.length && view === 'category'">
+        <div v-for="section in categorySections" :key="section.type" class="mt-4 first:mt-3">
+          <div class="flex items-baseline justify-between gap-3 px-1">
+            <h3 class="text-sm font-semibold text-toned">{{ section.title }}</h3>
+            <p
+              class="font-display text-sm font-semibold tabular-nums"
+              :class="section.type === 'income' ? 'text-success' : 'text-highlighted'"
+            >
+              {{ formatAmount(section.total, currency) }}
+            </p>
+          </div>
+          <div class="mt-2 space-y-3">
+            <CategoryGroup
+              v-for="group in section.groups"
+              :key="group.key"
+              :open="openCategory === group.key"
+              :category="group.category"
+              :type="section.type"
+              :total="group.total"
+              :share="group.share"
+              :items="group.items"
+              :currency="currency"
+              @update:open="openCategory = $event ? group.key : null"
+            />
+          </div>
+        </div>
+      </template>
     </section>
   </div>
 </template>

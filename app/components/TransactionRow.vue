@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// One transaction line: category tile, category name, note (or wallet when there is none), signed amount
+// One transaction line: category tile, category name, note (when there is one), signed amount.
+// The wallet is still needed for its currency.
 const props = defineProps<{ transaction: Transaction; category?: Category; wallet?: Account; hideCurrency?: boolean }>();
 
 const signed = computed(() =>
@@ -13,9 +14,7 @@ const currency = computed(() => props.wallet?.currency ?? "USD");
     <IconTile :icon="category?.icon ?? 'i-lucide-tag'" :color="category?.color" size="sm" />
     <div class="min-w-0 flex-1">
       <p class="truncate font-medium text-highlighted">{{ category?.name ?? "Uncategorized" }}</p>
-      <p class="truncate text-sm text-muted">
-        {{ transaction.note || wallet?.name }}
-      </p>
+      <p v-if="transaction.note" class="truncate text-sm text-muted">{{ transaction.note }}</p>
     </div>
     <MoneyAmount
       :amount="signed"
