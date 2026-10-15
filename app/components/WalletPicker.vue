@@ -13,7 +13,7 @@ const open = ref(false);
       trailing-icon="i-lucide-chevron-down"
       color="neutral"
       variant="subtle"
-      aria-label="Switch wallet"
+      aria-haspopup="dialog"
       class="max-w-44"
       @click="open = true"
     />

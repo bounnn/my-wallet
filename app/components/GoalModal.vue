@@ -16,21 +16,12 @@ const icons = [
   "i-lucide-bike", "i-lucide-camera", "i-lucide-shield", "i-lucide-target",
   "i-lucide-briefcase", "i-lucide-paw-print",
 ];
-// Full class names so Tailwind can find them
-const swatches: Record<CategoryColor, string> = {
-  primary: "bg-primary",
-  secondary: "bg-secondary",
-  success: "bg-success",
-  info: "bg-info",
-  warning: "bg-warning",
-  error: "bg-error",
-};
 
 const currency = computed(() => props.goal?.currency ?? props.wallet?.currency ?? "USD");
 const name = ref("");
 const targetText = ref("");
 const icon = ref(icons[0]!);
-const color = ref<CategoryColor>("primary");
+const color = ref<CategoryColor>(DEFAULT_CATEGORY_COLOR);
 const deadline = shallowRef<CalendarDate>();
 const calendarOpen = ref(false);
 const errors = ref<{ name?: string; target?: string }>({});
@@ -47,7 +38,7 @@ watch(open, (isOpen) => {
   name.value = category?.name ?? "";
   targetText.value = g ? formatAmount(g.target, g.currency) : "";
   icon.value = category?.icon ?? icons[0]!;
-  color.value = category?.color ?? "primary";
+  color.value = category?.color ?? DEFAULT_CATEGORY_COLOR;
   deadline.value = g?.deadline
     ? new CalendarDate(g.deadline.getFullYear(), g.deadline.getMonth() + 1, g.deadline.getDate())
     : undefined;
@@ -100,7 +91,7 @@ async function save() {
         await db.categories.update(goal.categoryId, category);
         await db.goals.update(goal.id, fields);
       } else {
-        if (!props.wallet) throw new Error("Add a wallet first");
+        if (!props.wallet) throw new UserError("Add a wallet first");
         const accountId = props.wallet.id;
         const categoryId = await db.categories.add({ ...category, type: "expense" });
         await db.goals.add({ ...fields, accountId, categoryId, currency: currency.value, initialSaved: 0, createdAt: new Date() });
@@ -110,7 +101,7 @@ async function save() {
   } catch (error) {
     toast.add({
       title: "Couldn't save the goal",
-      description: error instanceof Error ? error.message : String(error),
+      description: errorText(error),
       color: "error",
       icon: "i-lucide-circle-alert",
     });
@@ -159,7 +150,7 @@ async function save() {
               <span class="flex-1 text-sm text-muted">Due date</span>
               <button
                 type="button"
-                class="rounded-full px-3 py-1 text-sm font-medium tabular-nums transition-colors"
+                class="-my-1.5 h-11 rounded-full px-3.5 text-sm font-medium tabular-nums transition-colors"
                 :class="deadline || calendarOpen ? 'bg-primary/20 text-navy-100' : 'bg-accented text-muted hover:text-toned'"
                 :aria-expanded="calendarOpen"
                 @click="calendarOpen = !calendarOpen"
@@ -170,7 +161,7 @@ async function save() {
                 v-if="deadline"
                 type="button"
                 aria-label="Remove due date"
-                class="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full text-dimmed transition-colors hover:text-toned"
+                class="-my-1.5 -mr-2.5 flex size-11 shrink-0 items-center justify-center rounded-full text-dimmed transition-colors hover:text-toned"
                 @click="
                   deadline = undefined;
                   calendarOpen = false;
@@ -210,21 +201,7 @@ async function save() {
 
         <div>
           <p class="text-sm text-muted">Color</p>
-          <div class="mt-2 flex gap-3" role="radiogroup" aria-label="Color">
-            <button
-              v-for="(swatch, key) in swatches"
-              :key="key"
-              type="button"
-              role="radio"
-              :aria-checked="key === color"
-              :aria-label="key"
-              class="flex size-9 items-center justify-center rounded-full transition-transform"
-              :class="[swatch, key === color ? 'scale-110 ring-2 ring-white/80 ring-offset-2 ring-offset-(--ui-bg-muted)' : '']"
-              @click="color = key"
-            >
-              <UIcon v-if="key === color" name="i-lucide-check" class="size-4 text-white" />
-            </button>
-          </div>
+          <ColorPicker v-model="color" />
         </div>
 
         <UButton

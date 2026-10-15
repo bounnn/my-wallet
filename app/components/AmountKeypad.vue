@@ -65,10 +65,10 @@ function press(key: Key) {
   model.value = number === "0" ? value.slice(0, -1) + key : value + key;
 }
 
-// Long-press backspace clears everything
+// Long-press backspace clears everything; long enough that a resting thumb doesn't trigger it
 let clearTimer: ReturnType<typeof setTimeout> | undefined;
 function startClear() {
-  clearTimer = setTimeout(() => (model.value = ""), 500);
+  clearTimer = setTimeout(() => (model.value = ""), 800);
 }
 function stopClear() {
   clearTimeout(clearTimer);

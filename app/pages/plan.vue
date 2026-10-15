@@ -20,7 +20,7 @@ const now = new Date();
 
 // --- Goals ---
 
-type Status = { tone: "success" | "error" | "info"; icon: string; text: string };
+type Status = { tone: "success" | "warning" | "error" | "info"; icon: string; text: string };
 
 const savedFor = (g: Goal) => goalSaved(g, transactions.value ?? []);
 
@@ -43,7 +43,7 @@ const goalCards = computed(() =>
         category,
         name: category?.name ?? "Goal",
         icon: category?.icon ?? "i-lucide-piggy-bank",
-        color: category?.color ?? "primary",
+        color: category?.color ?? DEFAULT_CATEGORY_COLOR,
         saved,
         progress,
         left,
@@ -63,7 +63,7 @@ function goalStatus(g: Goal, left: number, behind: number): Status | undefined {
     return { tone: "error", icon: "i-lucide-circle-alert", text: `Due date passed, ${formatMoney(left, g.currency)} to go` };
   }
   if (behind) {
-    return { tone: "error", icon: "i-lucide-circle-alert", text: `You're ${Math.round(behind * 100)}% behind schedule` };
+    return { tone: "warning", icon: "i-lucide-clock-alert", text: `A little behind, ${Math.round(behind * 100)}% to catch up` };
   }
   // On track: what's still needed per month (or the whole rest when it's due within a month)
   const months = Math.floor(days / 30);
@@ -72,10 +72,11 @@ function goalStatus(g: Goal, left: number, behind: number): Status | undefined {
     : { tone: "info", icon: "i-lucide-calendar-check", text: `On track, due in ${days} ${days === 1 ? "day" : "days"}` };
 }
 
-// Full class names so Tailwind can find them
+// Soft tinted strips, never a solid alarm fill; full class names so Tailwind can find them
 const statusClass: Record<Status["tone"], string> = {
   success: "bg-success/15 text-success",
-  error: "bg-error/90 text-white",
+  warning: "bg-warning/10 text-warning",
+  error: "bg-error/15 text-error",
   info: "bg-primary/20 text-navy-100",
 };
 
@@ -145,23 +146,19 @@ function goalMenu(card: GoalCard) {
 
 // Add money button: a soft wash of the goal's color with a faint edge, so each card's action matches its goal
 const addMoneyStyle = (color: CategoryColor) => ({
-  background: `linear-gradient(180deg, color-mix(in oklab, var(--ui-${color}) 28%, transparent), color-mix(in oklab, var(--ui-${color}) 16%, transparent))`,
-  boxShadow: `inset 0 0 0 1px color-mix(in oklab, var(--ui-${color}) 30%, transparent)`,
+  background: `linear-gradient(180deg, ${colorMix(color, 28)}, ${colorMix(color, 16)})`,
+  boxShadow: `inset 0 0 0 1px ${colorMix(color, 30)}`,
 });
 
-// Track and fill in the goal's color; the hatched stretch is how far behind schedule it is (ref1)
-const barTrack = (color: CategoryColor) => ({
-  background: `color-mix(in oklab, var(--ui-${color}) 14%, transparent)`,
-});
-const barFill = (color: CategoryColor, progress: number) => ({
-  width: `${progress * 100}%`,
-  background: `linear-gradient(90deg, color-mix(in oklab, var(--ui-${color}) 45%, transparent), var(--ui-${color}))`,
-});
+// Bars in the goal's color (barTrackStyle / barFillStyle); the hatched stretch is how far behind schedule it is
 const barBehind = (color: CategoryColor, progress: number, behind: number) => ({
   left: `${progress * 100}%`,
   width: `${behind * 100}%`,
-  background: `repeating-linear-gradient(-60deg, color-mix(in oklab, var(--ui-${color}) 55%, transparent) 0 2px, transparent 2px 6px)`,
+  background: `repeating-linear-gradient(-60deg, ${colorMix(color, 55)} 0 2px, transparent 2px 6px)`,
 });
+
+// Big amounts shrink instead of breaking mid-number (long LAK totals)
+const amountSize = (text: string) => (text.length > 16 ? "text-lg" : text.length > 12 ? "text-xl" : "text-2xl");
 
 // --- Budgets: set month by month; the picked month's spending per budget against its limit ---
 
@@ -208,7 +205,7 @@ const budgetCards = computed(() =>
           id,
           name: category?.name ?? "Uncategorized",
           icon: category?.icon ?? "i-lucide-tag",
-          color: category?.color ?? "primary",
+          color: category?.color ?? DEFAULT_CATEGORY_COLOR,
         };
       });
       const spent = b.categoryIds.reduce((s, id) => s + (monthSpent.value.get(id) ?? 0), 0);
@@ -218,7 +215,7 @@ const budgetCards = computed(() =>
         tiles,
         name: b.name || tiles.map((t) => t.name).join(", "),
         // The bar follows the first category's color
-        color: tiles[0]?.color ?? "primary",
+        color: tiles[0]?.color ?? DEFAULT_CATEGORY_COLOR,
         spent,
         used,
         left: b.amount - spent,
@@ -230,9 +227,13 @@ const budgetCards = computed(() =>
 const budgetTotal = computed(() => budgetCards.value.reduce((s, b) => s + b.budget.amount, 0));
 const budgetSpent = computed(() => budgetCards.value.reduce((s, b) => s + b.spent, 0));
 
-// Bar in the category color until the limit is nearly reached
-const budgetColor = (b: { used: number; color: CategoryColor }): CategoryColor =>
-  b.used > 1 ? "error" : b.used >= 0.9 ? "warning" : b.color;
+// The bar keeps the category color; a nearly used or overspent budget says so with an icon and words
+const budgetAlert = (b: { used: number }) =>
+  b.used > 1
+    ? { icon: "i-lucide-circle-alert", text: "Over budget", class: "text-error" }
+    : b.used >= 0.9
+      ? { icon: "i-lucide-triangle-alert", text: "Almost used up", class: "text-warning" }
+      : undefined;
 
 const budgetModalOpen = ref(false);
 const editingBudget = shallowRef<Budget>();
@@ -240,13 +241,45 @@ function openBudget(budget?: Budget) {
   editingBudget.value = budget;
   budgetModalOpen.value = true;
 }
+
+// Tapping a budget shows the month's spending behind it, newest first; editing is one tap further.
+// By id, so the numbers stay live.
+const detailsOpen = ref(false);
+const detailsBudgetId = ref<number>();
+const detailsCard = computed(() => budgetCards.value.find((c) => c.budget.id === detailsBudgetId.value));
+const detailsItems = computed(() => {
+  const b = detailsCard.value?.budget;
+  if (!b) return [];
+  const from = month.value;
+  const to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
+  return (transactions.value ?? [])
+    .filter(
+      (t) =>
+        t.type === "expense" &&
+        t.accountId === accountId.value &&
+        b.categoryIds.includes(t.categoryId) &&
+        t.date >= from &&
+        t.date < to,
+    )
+    .sort((x, y) => y.date.getTime() - x.date.getTime());
+});
+function openDetails(id: number) {
+  detailsBudgetId.value = id;
+  detailsOpen.value = true;
+}
+function editFromDetails() {
+  const budget = detailsCard.value?.budget;
+  detailsOpen.value = false;
+  if (budget) openBudget(budget);
+}
 const copyModalOpen = ref(false);
 </script>
 
 <template>
   <div>
-    <PageHeader title="My Plan">
-      <template #trailing>
+    <!-- Same header as home and report: with several wallets the picker takes the title's place -->
+    <PageHeader :title="(wallets?.length ?? 0) > 1 ? undefined : 'My Plan'">
+      <template #leading>
         <WalletPicker />
       </template>
     </PageHeader>
@@ -296,7 +329,10 @@ const copyModalOpen = ref(false);
 
               <!-- Wraps instead of cutting long amounts (e.g. LAK) short -->
               <div class="mt-4 flex flex-wrap items-baseline gap-x-2">
-                <p class="font-display text-2xl font-bold tracking-tight break-all text-highlighted tabular-nums">
+                <p
+                  class="font-display font-bold tracking-tight text-highlighted tabular-nums"
+                  :class="amountSize(formatAmount(g.saved, g.goal.currency))"
+                >
                   {{ formatAmount(g.saved, g.goal.currency) }}
                 </p>
                 <p class="shrink-0 text-sm text-muted tabular-nums">of {{ formatAmount(g.goal.target, g.goal.currency) }}</p>
@@ -308,9 +344,9 @@ const copyModalOpen = ref(false);
               <!-- Progress bar with a knob at the saved amount -->
               <div
                 class="relative mt-4 h-3 rounded-full"
-                :style="barTrack(g.color)"
+                :style="barTrackStyle(g.color)"
                 role="progressbar"
-                :aria-valuenow="Math.round(g.progress * 100)"
+                :aria-valuenow="Math.floor(g.progress * 100)"
                 aria-valuemin="0"
                 aria-valuemax="100"
                 :aria-label="`${g.name} progress`"
@@ -318,12 +354,12 @@ const copyModalOpen = ref(false);
                 <div class="absolute inset-y-0 rounded-r-full" :style="barBehind(g.color, g.progress, g.behind)" />
                 <div
                   class="bar-grow relative h-full rounded-full shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
-                  :style="barFill(g.color, g.progress)"
+                  :style="barFillStyle(g.color, g.progress)"
                 >
                   <span
                     v-if="g.progress > 0 && g.progress < 1"
                     class="absolute top-1/2 right-0 size-5 translate-x-1/2 -translate-y-1/2 rounded-full border-4 bg-white shadow-md"
-                    :style="{ borderColor: `var(--ui-${g.color})` }"
+                    :style="{ borderColor: colorVar(g.color) }"
                   />
                 </div>
               </div>
@@ -338,7 +374,7 @@ const copyModalOpen = ref(false);
                 </p>
               </div>
 
-              <!-- Add money tinted in the goal's color (the card's main action), take out as a quiet round button -->
+              <!-- Add money tinted in the goal's color (the card's main action), take out as a quiet pill -->
               <div v-if="g.left" class="mt-4 flex gap-2">
                 <button
                   type="button"
@@ -352,10 +388,10 @@ const copyModalOpen = ref(false);
                   v-if="g.saved > 0"
                   type="button"
                   :aria-label="`Take money out of ${g.name}`"
-                  class="flex size-12 shrink-0 items-center justify-center rounded-full bg-elevated text-muted transition-[transform,color] hover:text-toned active:scale-95 motion-reduce:active:scale-100"
+                  class="flex h-12 shrink-0 items-center justify-center rounded-full bg-elevated px-5 font-semibold text-toned transition-[transform,color] hover:text-highlighted active:scale-95 motion-reduce:active:scale-100"
                   @click="openMoney(g, 'take')"
                 >
-                  <UIcon name="i-lucide-minus" class="size-5" />
+                  Take out
                 </button>
               </div>
             </div>
@@ -429,8 +465,8 @@ const copyModalOpen = ref(false);
               <button
                 type="button"
                 class="surface-card w-full rounded-2xl p-4 text-left transition-transform active:scale-[0.99] motion-reduce:active:scale-100"
-                :aria-label="`Edit ${b.name} budget`"
-                @click="openBudget(b.budget)"
+                :aria-label="`${b.name} budget, see spending`"
+                @click="openDetails(b.budget.id)"
               >
                 <div class="flex items-center gap-3">
                   <!-- First category's tile; several categories add a "+N" badge on its corner
@@ -439,18 +475,18 @@ const copyModalOpen = ref(false);
                     <IconTile :icon="b.tiles[0]?.icon ?? 'i-lucide-tag'" :color="b.tiles[0]?.color" size="sm" />
                     <span
                       v-if="b.tiles.length > 1"
-                      class="absolute -right-1.5 -bottom-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-accented px-1 text-[11px] font-semibold text-highlighted tabular-nums ring-2 ring-[#161b28]"
+                      class="absolute -right-1.5 -bottom-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-accented px-1 text-[11px] font-semibold text-highlighted tabular-nums ring-2 ring-(--ui-bg-muted)"
                       :aria-label="`${b.tiles.length} categories`"
                     >+{{ b.tiles.length - 1 }}</span>
                   </div>
                   <p class="min-w-0 flex-1 truncate font-display font-bold tracking-tight text-highlighted">{{ b.name }}</p>
                 </div>
 
-                <!-- What's left is the number that matters; wraps instead of cutting long amounts -->
+                <!-- What's left is the number that matters; long amounts shrink and wrap before "left" -->
                 <p class="mt-4 flex flex-wrap items-baseline gap-x-2">
                   <span
-                    class="font-display text-2xl font-bold tracking-tight break-all tabular-nums"
-                    :class="b.left < 0 ? 'text-error' : 'text-highlighted'"
+                    class="font-display font-bold tracking-tight tabular-nums"
+                    :class="[amountSize(formatAmount(Math.abs(b.left), currency)), b.left < 0 ? 'text-error' : 'text-highlighted']"
                   >
                     {{ formatAmount(Math.abs(b.left), currency) }}
                   </span>
@@ -459,7 +495,7 @@ const copyModalOpen = ref(false);
 
                 <div
                   class="mt-3 h-3 overflow-hidden rounded-full"
-                  :style="barTrack(budgetColor(b))"
+                  :style="barTrackStyle(b.color)"
                   role="progressbar"
                   :aria-valuenow="Math.round(b.used * 100)"
                   aria-valuemin="0"
@@ -468,18 +504,20 @@ const copyModalOpen = ref(false);
                 >
                   <div
                     class="bar-grow h-full rounded-full shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
-                    :style="barFill(budgetColor(b), Math.min(b.used, 1))"
+                    :style="barFillStyle(b.color, Math.min(b.used, 1))"
                   />
                 </div>
 
-                <!-- Same layout as the goal cards: percent on the left, amounts on the right -->
+                <!-- Same layout as the goal cards: percent on the left, amounts on the right.
+                     Nearly used / over budget is said in words with an icon, not by color alone -->
                 <div class="mt-3 flex items-center justify-between gap-3 text-sm text-muted tabular-nums">
-                  <p>
+                  <p v-if="budgetAlert(b)" class="flex items-center gap-1.5 font-medium" :class="budgetAlert(b)!.class">
+                    <UIcon :name="budgetAlert(b)!.icon" class="size-4 shrink-0" />
+                    {{ budgetAlert(b)!.text }}, {{ Math.round(b.used * 100) }}%
+                  </p>
+                  <p v-else>
                     Used
-                    <span
-                      class="font-medium"
-                      :class="b.used > 1 ? 'text-error' : b.used >= 0.9 ? 'text-warning' : 'text-toned'"
-                    >{{ Math.round(b.used * 100) }}%</span>
+                    <span class="font-medium text-toned">{{ Math.round(b.used * 100) }}%</span>
                   </p>
                   <p class="text-right">
                     <span class="font-medium text-toned">{{ formatAmount(b.spent, currency) }}</span>
@@ -500,6 +538,17 @@ const copyModalOpen = ref(false);
       :category="moneyCard?.category"
       :saved="moneyCard?.saved ?? 0"
       :mode="moneyMode"
+    />
+    <BudgetDetailsModal
+      v-model:open="detailsOpen"
+      :name="detailsCard?.name ?? ''"
+      :spent="detailsCard?.spent ?? 0"
+      :amount="detailsCard?.budget.amount ?? 0"
+      :color="detailsCard?.color"
+      :currency="currency"
+      :items="detailsItems"
+      :category-by-id="categoryById"
+      @edit="editFromDetails"
     />
     <BudgetModal
       v-if="wallet"

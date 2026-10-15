@@ -15,13 +15,26 @@ export interface Category {
   name: string;
   type: "income" | "expense";
   icon?: string;
-  // Tint for the icon tile, one of the app's semantic colors
+  // Tint for the icon tile, bars and donut; its own palette, apart from the status colors
   color?: CategoryColor;
   // Hidden from pickers (a deleted goal's category); its transactions still show it
   archived?: boolean;
 }
 
-export type CategoryColor = "primary" | "secondary" | "success" | "info" | "warning" | "error";
+export const categoryColorKeys = [
+  "blue", "sky", "teal", "green", "lime", "yellow", "orange", "red", "pink", "slate",
+] as const;
+export type CategoryColor = (typeof categoryColorKeys)[number];
+
+// Before v7 categories used the status colors; maps those to the closest category color
+export const legacyColors: Record<string, CategoryColor> = {
+  primary: "blue",
+  secondary: "teal",
+  success: "green",
+  info: "sky",
+  warning: "orange",
+  error: "red",
+};
 
 export interface Transaction {
   id: number;
@@ -88,20 +101,20 @@ export const db = new Dexie("my-wallet") as Dexie & {
 
 // Starter categories so a transaction can be added right after onboarding
 export const defaultCategories: Omit<Category, "id">[] = [
-  { name: "Food & drink", type: "expense", icon: "i-lucide-utensils", color: "warning" },
-  { name: "Groceries", type: "expense", icon: "i-lucide-shopping-basket", color: "success" },
-  { name: "Transport", type: "expense", icon: "i-lucide-bus", color: "info" },
-  { name: "Shopping", type: "expense", icon: "i-lucide-shopping-bag", color: "secondary" },
-  { name: "Bills", type: "expense", icon: "i-lucide-receipt", color: "error" },
-  { name: "Home", type: "expense", icon: "i-lucide-house", color: "primary" },
-  { name: "Health", type: "expense", icon: "i-lucide-heart-pulse", color: "error" },
-  { name: "Fun", type: "expense", icon: "i-lucide-ticket", color: "secondary" },
-  { name: "Other", type: "expense", icon: "i-lucide-ellipsis", color: "primary" },
-  { name: "Salary", type: "income", icon: "i-lucide-briefcase", color: "success" },
-  { name: "Business", type: "income", icon: "i-lucide-store", color: "info" },
-  { name: "Gift", type: "income", icon: "i-lucide-gift", color: "secondary" },
-  { name: "Interest", type: "income", icon: "i-lucide-trending-up", color: "success" },
-  { name: "Other", type: "income", icon: "i-lucide-ellipsis", color: "primary" },
+  { name: "Food & drink", type: "expense", icon: "i-lucide-utensils", color: "orange" },
+  { name: "Groceries", type: "expense", icon: "i-lucide-shopping-basket", color: "lime" },
+  { name: "Transport", type: "expense", icon: "i-lucide-bus", color: "sky" },
+  { name: "Shopping", type: "expense", icon: "i-lucide-shopping-bag", color: "pink" },
+  { name: "Bills", type: "expense", icon: "i-lucide-receipt", color: "yellow" },
+  { name: "Home", type: "expense", icon: "i-lucide-house", color: "blue" },
+  { name: "Health", type: "expense", icon: "i-lucide-heart-pulse", color: "red" },
+  { name: "Fun", type: "expense", icon: "i-lucide-ticket", color: "teal" },
+  { name: "Other", type: "expense", icon: "i-lucide-ellipsis", color: "slate" },
+  { name: "Salary", type: "income", icon: "i-lucide-briefcase", color: "green" },
+  { name: "Business", type: "income", icon: "i-lucide-store", color: "teal" },
+  { name: "Gift", type: "income", icon: "i-lucide-gift", color: "pink" },
+  { name: "Interest", type: "income", icon: "i-lucide-trending-up", color: "lime" },
+  { name: "Other", type: "income", icon: "i-lucide-ellipsis", color: "slate" },
 ];
 
 // Only indexed fields are listed; bump the version when changing the schema
@@ -194,6 +207,38 @@ db.version(6)
         b.accountId = main.id;
       });
   });
+
+// v7: categories get their own color palette. Untouched starter categories take their new color (so Bills
+// and Health, Shopping and Fun no longer share one); the rest map to the closest new color.
+const oldStarterColors: Record<string, string> = {
+  "expense:Food & drink": "warning",
+  "expense:Groceries": "success",
+  "expense:Transport": "info",
+  "expense:Shopping": "secondary",
+  "expense:Bills": "error",
+  "expense:Home": "primary",
+  "expense:Health": "error",
+  "expense:Fun": "secondary",
+  "expense:Other": "primary",
+  "income:Salary": "success",
+  "income:Business": "info",
+  "income:Gift": "secondary",
+  "income:Interest": "success",
+  "income:Other": "primary",
+};
+db.version(7)
+  .stores({})
+  .upgrade((tx) =>
+    tx
+      .table("categories")
+      .toCollection()
+      .modify((c) => {
+        const key = `${c.type}:${c.name}`;
+        const starter = defaultCategories.find((d) => `${d.type}:${d.name}` === key);
+        c.color =
+          starter && oldStarterColors[key] === c.color ? starter.color : (legacyColors[c.color] ?? c.color ?? "blue");
+      }),
+  );
 
 // New databases skip upgrades, so seed them on creation
 db.on("populate", (tx) => tx.table("categories").bulkAdd(defaultCategories));

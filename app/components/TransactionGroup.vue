@@ -31,7 +31,7 @@ const formatSigned = (minor: number) => `${minor > 0 ? "+" : ""}${formatAmount(m
             :aria-label="`${count} ${count === 1 ? 'transaction' : 'transactions'}`"
           >{{ count }}</span>
         </p>
-        <p class="text-xs text-dimmed tabular-nums">{{ sublabel }}</p>
+        <p class="text-xs text-muted tabular-nums">{{ sublabel }}</p>
       </div>
       <MoneyAmount
         :amount="total"

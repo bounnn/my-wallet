@@ -253,7 +253,7 @@ async function save() {
   } catch (err) {
     toast.add({
       title: "Couldn't save the transaction",
-      description: err instanceof Error ? err.message : String(err),
+      description: errorText(err),
       color: "error",
       icon: "i-lucide-circle-alert",
     });
@@ -287,7 +287,7 @@ const chip = (active: boolean) =>
     "
   >
     <!-- Top bar: back + title, expense / income switch on the right (one tap, no menu) -->
-    <header class="flex h-12 shrink-0 items-center gap-2 px-4">
+    <header class="flex h-14 shrink-0 items-center gap-2 px-4">
       <UButton
         icon="i-lucide-chevron-left"
         color="neutral"
@@ -299,7 +299,7 @@ const chip = (active: boolean) =>
       <h1
         class="flex-1 truncate font-display text-lg font-semibold tracking-tight text-highlighted"
       >
-        {{ editId ? "Edit" : "Add new" }}
+        {{ editId ? (type === "income" ? "Edit income" : "Edit expense") : "Add new" }}
       </h1>
       <span
         v-if="goal"
@@ -313,9 +313,10 @@ const chip = (active: boolean) =>
         :items="types"
         :content="false"
         variant="pill"
-        size="xs"
+        size="md"
         aria-label="Transaction type"
-        class="w-40 shrink-0"
+        class="w-48 shrink-0"
+        :ui="{ trigger: 'h-10' }"
         @update:model-value="setType($event as Transaction['type'])"
       />
     </header>
@@ -424,7 +425,7 @@ const chip = (active: boolean) =>
         </button>
 
         <!-- 3. Details: already filled in, change only when needed -->
-        <div class="flex h-12 items-center gap-3 px-4">
+        <div class="flex items-center gap-3 px-4 py-2">
           <UIcon name="i-lucide-calendar" class="size-5 shrink-0 text-dimmed" />
           <div
             class="flex min-w-0 flex-1 gap-1.5"
@@ -433,7 +434,7 @@ const chip = (active: boolean) =>
           >
             <button
               type="button"
-              class="rounded-full px-3 py-1 text-sm font-medium transition-colors"
+              class="h-11 rounded-full px-3.5 text-sm font-medium transition-colors"
               :class="chip(pickedDay.compare(today) === 0)"
               :aria-pressed="pickedDay.compare(today) === 0"
               @click="pickedDay = today"
@@ -442,7 +443,7 @@ const chip = (active: boolean) =>
             </button>
             <button
               type="button"
-              class="rounded-full px-3 py-1 text-sm font-medium transition-colors"
+              class="h-11 rounded-full px-3.5 text-sm font-medium transition-colors"
               :class="chip(pickedDay.compare(yesterday) === 0)"
               :aria-pressed="pickedDay.compare(yesterday) === 0"
               @click="pickedDay = yesterday"
@@ -451,7 +452,7 @@ const chip = (active: boolean) =>
             </button>
             <button
               type="button"
-              class="inline-flex min-w-0 items-center gap-1 rounded-full px-3 py-1 text-sm font-medium transition-colors"
+              class="inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-full px-3.5 text-sm font-medium transition-colors"
               :class="chip(isOtherDay)"
               :aria-label="
                 isOtherDay
@@ -511,7 +512,7 @@ const chip = (active: boolean) =>
             v-if="note"
             type="button"
             aria-label="Clear note"
-            class="-my-1 -mr-1 flex size-8 shrink-0 items-center justify-center rounded-full text-dimmed transition-colors hover:text-toned"
+            class="-my-2.5 -mr-2.5 flex size-11 shrink-0 items-center justify-center rounded-full text-dimmed transition-colors hover:text-toned"
             @mousedown.prevent
             @click="note = ''"
           >

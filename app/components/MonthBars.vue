@@ -97,7 +97,7 @@ const tint = computed(() => ({
         >
           <span
             class="mb-1.5 h-4 text-xs font-semibold tabular-nums transition-colors"
-            :class="active === i ? 'text-highlighted' : 'text-dimmed'"
+            :class="active === i ? 'text-highlighted' : 'text-muted'"
           >
             {{ item.total ? compact(item.total) : "" }}
           </span>
@@ -118,7 +118,7 @@ const tint = computed(() => ({
       <span
         v-for="(item, i) in items"
         :key="item.key"
-        :class="active === i ? 'font-semibold text-highlighted' : 'text-dimmed'"
+        :class="active === i ? 'font-semibold text-highlighted' : 'text-muted'"
       >
         {{ item.label }}
       </span>

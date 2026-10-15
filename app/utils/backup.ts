@@ -1,6 +1,7 @@
 import * as v from "valibot";
 import { formatDate } from "./date";
-import { db, defaultCategories } from "./db";
+import { UserError } from "./error";
+import { type CategoryColor, categoryColorKeys, db, defaultCategories, legacyColors } from "./db";
 
 // Backup file: every table as JSON (dates become ISO strings), restored by replacing all data.
 // Bump `version` if the shape changes, and keep reading older ones.
@@ -56,7 +57,13 @@ const date = v.pipe(
 );
 const id = v.pipe(v.number(), v.integer());
 const minor = v.pipe(v.number(), v.integer());
-const color = v.optional(v.picklist(["primary", "secondary", "success", "info", "warning", "error"]));
+// Older backups use the status color names, which map to the category palette (like the db's v7 upgrade)
+const color = v.optional(
+  v.pipe(
+    v.picklist([...categoryColorKeys, ...(Object.keys(legacyColors) as (keyof typeof legacyColors)[])]),
+    v.transform((c): CategoryColor => legacyColors[c] ?? (c as CategoryColor)),
+  ),
+);
 const type = v.picklist(["income", "expense"]);
 
 const backupSchema = v.object({
@@ -116,18 +123,18 @@ export function parseBackup(text: string): Backup {
   try {
     json = JSON.parse(text);
   } catch {
-    throw new Error("This file isn't a My Wallet backup");
+    throw new UserError("This file isn't a My Wallet backup");
   }
   const result = v.safeParse(backupSchema, json);
   if (!result.success) {
     const issue = result.issues[0];
-    throw new Error(
+    throw new UserError(
       issue.message === "Made by a newer version of the app"
         ? "This backup was made by a newer version of the app"
         : "This file isn't a My Wallet backup, or it's damaged",
     );
   }
-  if (!result.output.data.accounts.length) throw new Error("This backup has no wallets");
+  if (!result.output.data.accounts.length) throw new UserError("This backup has no wallets");
   return result.output;
 }
 

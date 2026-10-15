@@ -12,12 +12,30 @@ export const categoryIcons = [
   "i-lucide-wallet", "i-lucide-tag",
 ];
 
-// Color picker dots; full class names so Tailwind can find them
-export const colorSwatches: Record<CategoryColor, string> = {
-  primary: "bg-primary",
-  secondary: "bg-secondary",
-  success: "bg-success",
-  info: "bg-info",
-  warning: "bg-warning",
-  error: "bg-error",
+export const DEFAULT_CATEGORY_COLOR: CategoryColor = "blue";
+
+// Color picker dots with a name for screen readers; full class names so Tailwind can find them
+export const colorSwatches: Record<CategoryColor, { class: string; label: string }> = {
+  blue: { class: "bg-cat-blue", label: "Blue" },
+  sky: { class: "bg-cat-sky", label: "Sky blue" },
+  teal: { class: "bg-cat-teal", label: "Teal" },
+  green: { class: "bg-cat-green", label: "Green" },
+  lime: { class: "bg-cat-lime", label: "Lime" },
+  yellow: { class: "bg-cat-yellow", label: "Yellow" },
+  orange: { class: "bg-cat-orange", label: "Orange" },
+  red: { class: "bg-cat-red", label: "Red" },
+  pink: { class: "bg-cat-pink", label: "Pink" },
+  slate: { class: "bg-cat-slate", label: "Grey" },
 };
+
+// The category color as CSS, and a see-through mix of it for tracks and soft fills
+export const colorVar = (color?: CategoryColor) => `var(--color-cat-${color ?? DEFAULT_CATEGORY_COLOR})`;
+export const colorMix = (color: CategoryColor | undefined, percent: number) =>
+  `color-mix(in oklab, ${colorVar(color)} ${percent}%, transparent)`;
+
+// Progress bars in the category color (home, report, plan): faint tinted track, fill fading in from the left
+export const barTrackStyle = (color?: CategoryColor) => ({ background: colorMix(color, 14) });
+export const barFillStyle = (color: CategoryColor | undefined, share: number, min = 0) => ({
+  width: `${Math.max(share * 100, min)}%`,
+  background: `linear-gradient(90deg, ${colorMix(color, 45)}, ${colorVar(color)})`,
+});

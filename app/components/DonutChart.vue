@@ -7,6 +7,8 @@ export interface DonutSegment {
   label: string;
   value: number;
   color: CategoryColor;
+  // Read out with the label, e.g. "1,250.00 USD, 32%"
+  valueLabel?: string;
 }
 
 const props = defineProps<{ segments: DonutSegment[]; ariaLabel: string }>();
@@ -62,7 +64,6 @@ const arcs = computed(() => {
   });
 });
 
-const soft = (color: CategoryColor, amount: number) => `color-mix(in oklab, var(--ui-${color}) ${amount}%, transparent)`;
 
 function toggle(segmentId: number) {
   selected.value = selected.value === segmentId ? null : segmentId;
@@ -94,8 +95,8 @@ function toggle(segmentId: number) {
             :x2="arc.to.x"
             :y2="arc.to.y"
           >
-            <stop offset="0" :style="{ stopColor: soft(arc.color, 45) }" />
-            <stop offset="1" :style="{ stopColor: `var(--ui-${arc.color})` }" />
+            <stop offset="0" :style="{ stopColor: colorMix(arc.color, 45) }" />
+            <stop offset="1" :style="{ stopColor: colorVar(arc.color) }" />
           </linearGradient>
         </defs>
 
@@ -114,9 +115,9 @@ function toggle(segmentId: number) {
           :opacity="selected === null || selected === arc.id ? 1 : 0.3"
           role="button"
           tabindex="0"
-          :aria-label="arc.label"
+          :aria-label="arc.valueLabel ? `${arc.label}, ${arc.valueLabel}` : arc.label"
           :aria-pressed="selected === arc.id"
-          class="cursor-pointer outline-none transition-[stroke-dasharray,stroke-dashoffset,stroke-width,opacity] duration-700 ease-out focus-visible:opacity-100 motion-reduce:transition-none"
+          class="cursor-pointer outline-none transition-[stroke-dasharray,stroke-dashoffset,stroke-width,opacity] duration-700 ease-out focus-visible:opacity-100 focus-visible:[filter:drop-shadow(0_0_2px_white)_drop-shadow(0_0_1px_white)] motion-reduce:transition-none"
           @click="toggle(arc.id)"
           @keydown.enter.prevent="toggle(arc.id)"
           @keydown.space.prevent="toggle(arc.id)"

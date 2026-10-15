@@ -53,7 +53,7 @@ async function copy() {
   } catch (error) {
     toast.add({
       title: "Couldn't copy the budgets",
-      description: error instanceof Error ? error.message : String(error),
+      description: errorText(error),
       color: "error",
       icon: "i-lucide-circle-alert",
     });

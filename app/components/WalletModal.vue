@@ -72,7 +72,7 @@ async function save() {
   } catch (error) {
     toast.add({
       title: "Couldn't save the wallet",
-      description: error instanceof Error ? error.message : String(error),
+      description: errorText(error),
       color: "error",
       icon: "i-lucide-circle-alert",
     });
@@ -172,7 +172,7 @@ async function remove() {
             @update:model-value="errors.balance = undefined"
           />
         </div>
-        <p v-if="currencyLocked" class="-mt-2 text-sm text-dimmed">
+        <p v-if="currencyLocked" class="-mt-2 text-sm text-muted">
           The currency can't change once a wallet has transactions, goals or budgets.
         </p>
 

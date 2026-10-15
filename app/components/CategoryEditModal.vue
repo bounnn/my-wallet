@@ -9,7 +9,7 @@ const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 
 const name = ref("");
 const icon = ref(categoryIcons[0]!);
-const color = ref<CategoryColor>("primary");
+const color = ref<CategoryColor>(DEFAULT_CATEGORY_COLOR);
 const nameError = ref<string>();
 const saving = ref(false);
 const toast = useToast();
@@ -19,7 +19,7 @@ watch(open, (isOpen) => {
   if (!isOpen) return;
   name.value = props.category?.name ?? "";
   icon.value = props.category?.icon ?? categoryIcons[0]!;
-  color.value = props.category?.color ?? "primary";
+  color.value = props.category?.color ?? DEFAULT_CATEGORY_COLOR;
   nameError.value = undefined;
 });
 
@@ -62,7 +62,7 @@ async function save() {
   } catch (error) {
     toast.add({
       title: "Couldn't save the category",
-      description: error instanceof Error ? error.message : String(error),
+      description: errorText(error),
       color: "error",
       icon: "i-lucide-circle-alert",
     });
@@ -144,21 +144,7 @@ async function remove() {
 
         <div>
           <p class="text-sm text-muted">Color</p>
-          <div class="mt-2 flex gap-3" role="radiogroup" aria-label="Color">
-            <button
-              v-for="(swatch, key) in colorSwatches"
-              :key="key"
-              type="button"
-              role="radio"
-              :aria-checked="key === color"
-              :aria-label="key"
-              class="flex size-9 items-center justify-center rounded-full transition-transform"
-              :class="[swatch, key === color ? 'scale-110 ring-2 ring-white/80 ring-offset-2 ring-offset-(--ui-bg-muted)' : '']"
-              @click="color = key"
-            >
-              <UIcon v-if="key === color" name="i-lucide-check" class="size-4 text-white" />
-            </button>
-          </div>
+          <ColorPicker v-model="color" />
         </div>
 
         <div class="flex gap-2">

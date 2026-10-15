@@ -9,7 +9,7 @@ const toast = useToast();
 const showError = (title: string, error: unknown) =>
   toast.add({
     title,
-    description: error instanceof Error ? error.message : String(error),
+    description: errorText(error),
     color: "error",
     icon: "i-lucide-circle-alert",
   });
@@ -57,38 +57,9 @@ function openCategory(category?: Category) {
   categoryModalOpen.value = true;
 }
 
-// --- Backup: remembered per device so the row can nudge when it's been a while ---
+// --- Backup: the row turns into a warning when there's none or it's over a month old ---
 
-const LAST_BACKUP_KEY = "my-wallet-last-backup";
-const lastBackup = ref<Date>();
-onMounted(() => {
-  try {
-    const saved = localStorage.getItem(LAST_BACKUP_KEY);
-    if (saved) lastBackup.value = new Date(saved);
-  } catch {}
-});
-const lastBackupLabel = computed(() => {
-  if (!lastBackup.value) return "Save a file with all your data";
-  const day = dayLabel(lastBackup.value);
-  return day === formatDate(lastBackup.value) ? `Last backup on ${day}` : `Last backup ${day.toLowerCase()}`;
-});
-
-const backingUp = ref(false);
-async function backUp() {
-  backingUp.value = true;
-  try {
-    if (!(await saveBackup())) return;
-    lastBackup.value = new Date();
-    try {
-      localStorage.setItem(LAST_BACKUP_KEY, lastBackup.value.toISOString());
-    } catch {}
-    toast.add({ title: "Backup saved", description: "Keep the file somewhere safe", icon: "i-lucide-circle-check" });
-  } catch (error) {
-    showError("Couldn't save the backup", error);
-  } finally {
-    backingUp.value = false;
-  }
-}
+const { backUp, saving: backingUp, isStale: backupStale, label: lastBackupLabel } = useBackup();
 
 // Restore: pick a file, check it, then confirm before replacing everything
 const fileInput = useTemplateRef("fileInput");
@@ -114,7 +85,7 @@ const restoreDescription = computed(() => {
   const backup = pendingRestore.value;
   if (!backup) return "";
   const { accounts, transactions } = backup.data;
-  return `Everything on this device will be replaced by the backup from ${formatDate(backup.exportedAt)}, with ${plural(accounts.length, "wallet")} and ${plural(transactions.length, "transaction")}.`;
+  return `Everything on this device will be replaced by the backup from ${formatDate(backup.exportedAt)}, with ${plural(accounts.length, "wallet")} and ${plural(transactions.length, "transaction")}. Back up what's here now if you might need it.`;
 });
 
 async function restore() {
@@ -171,7 +142,7 @@ async function erase() {
               :aria-label="`Edit ${row.wallet.name}`"
               @click="openWallet(row.wallet)"
             >
-              <IconTile icon="i-lucide-wallet" :color="row.wallet.id === activeWallet?.id ? 'primary' : 'info'" size="sm" />
+              <IconTile icon="i-lucide-wallet" size="sm" />
               <span class="min-w-0 flex-1">
                 <span class="flex items-center gap-2">
                   <span class="truncate font-medium text-highlighted">{{ row.wallet.name }}</span>
@@ -234,6 +205,9 @@ async function erase() {
       <!-- Backup: the only copy of the data is on this device -->
       <section class="mt-8">
         <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Backup</h2>
+        <p class="mt-1 text-sm text-muted">
+          Your data is only on this phone. A backup file lets you get it back if the phone is lost or reset.
+        </p>
         <div class="surface-card mt-3 divide-y divide-default overflow-hidden rounded-2xl">
           <button
             type="button"
@@ -241,10 +215,14 @@ async function erase() {
             :disabled="backingUp"
             @click="backUp"
           >
-            <IconTile icon="i-lucide-download" color="secondary" size="sm" />
+            <IconTile icon="i-lucide-download" :color="backupStale ? 'warning' : 'secondary'" size="sm" />
             <span class="min-w-0 flex-1">
               <span class="block font-medium text-highlighted">Back up data</span>
-              <span class="mt-0.5 block text-sm text-muted tabular-nums">
+              <span
+                class="mt-0.5 flex items-center gap-1 text-sm tabular-nums"
+                :class="backupStale ? 'text-warning' : 'text-muted'"
+              >
+                <UIcon v-if="backupStale" name="i-lucide-triangle-alert" class="size-3.5 shrink-0" />
                 {{ lastBackupLabel }}
               </span>
             </span>
@@ -290,6 +268,7 @@ async function erase() {
       title="Restore this backup?"
       :description="restoreDescription"
       confirm-label="Restore"
+      backup
       :loading="restoring"
       @confirm="restore"
     />
@@ -298,6 +277,7 @@ async function erase() {
       title="Erase all data?"
       description="All wallets, transactions, goals and budgets on this device will be deleted. Back up first if you might need them."
       confirm-label="Erase"
+      backup
       :loading="erasing"
       @confirm="erase"
     />

@@ -59,7 +59,7 @@ const byCategory = computed(() => {
         id,
         name: category?.name ?? "Uncategorized",
         icon: category?.icon ?? "i-lucide-tag",
-        color: category?.color ?? "primary",
+        color: category?.color ?? DEFAULT_CATEGORY_COLOR,
         total: sum,
         share: total.value ? sum / total.value : 0,
         last: last.get(id) ?? 0,
@@ -69,7 +69,13 @@ const byCategory = computed(() => {
 });
 
 const segments = computed(() =>
-  byCategory.value.map((c) => ({ id: c.id, label: c.name, value: c.total, color: c.color })),
+  byCategory.value.map((c) => ({
+    id: c.id,
+    label: c.name,
+    value: c.total,
+    color: c.color,
+    valueLabel: `${formatAmount(c.total, currency.value)} ${currency.value}, ${percent(c.share)}`,
+  })),
 );
 
 // Trend view: the picked month and the 5 before it, oldest first
@@ -111,15 +117,6 @@ function change(c: { total: number; last: number }) {
     class: good ? "bg-success/15 text-success" : "bg-error/15 text-error",
   };
 }
-
-// Progress bar in the category color: faint tinted track, fill fading in from the left
-const barTrack = (color: CategoryColor) => ({
-  background: `color-mix(in oklab, var(--ui-${color}) 14%, transparent)`,
-});
-const barFill = (color: CategoryColor, share: number) => ({
-  width: `${Math.max(share * 100, 4)}%`,
-  background: `linear-gradient(90deg, color-mix(in oklab, var(--ui-${color}) 45%, transparent), var(--ui-${color}))`,
-});
 </script>
 
 <template>
@@ -160,7 +157,7 @@ const barFill = (color: CategoryColor, share: number) => ({
               type="button"
               :aria-label="v.label"
               :aria-pressed="view === v.value"
-              class="flex size-8 items-center justify-center rounded-full transition-colors"
+              class="flex size-10 items-center justify-center rounded-full transition-colors"
               :class="view === v.value ? 'bg-primary/20 text-navy-100' : 'text-muted hover:text-toned'"
               @click="view = v.value"
             >
@@ -245,8 +242,8 @@ const barFill = (color: CategoryColor, share: number) => ({
                   </div>
                   <div class="mt-1 flex items-center justify-between gap-3">
                     <p class="text-sm text-muted tabular-nums">{{ percent(c.share) }} of total</p>
-                    <p v-if="!c.last" class="shrink-0 text-xs text-dimmed">None last month</p>
-                    <p v-else class="flex shrink-0 items-center gap-1.5 text-xs text-dimmed">
+                    <p v-if="!c.last" class="shrink-0 text-xs text-muted">None last month</p>
+                    <p v-else class="flex shrink-0 items-center gap-1.5 text-xs text-muted">
                       <span
                         class="flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium tabular-nums"
                         :class="change(c).class"
@@ -259,10 +256,10 @@ const barFill = (color: CategoryColor, share: number) => ({
                   </div>
                 </div>
               </div>
-              <div class="mt-4 h-3 overflow-hidden rounded-full" :style="barTrack(c.color)">
+              <div class="mt-4 h-3 overflow-hidden rounded-full" :style="barTrackStyle(c.color)">
                 <div
                   class="bar-grow h-full rounded-full shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
-                  :style="barFill(c.color, c.share)"
+                  :style="barFillStyle(c.color, c.share, 4)"
                 />
               </div>
             </button>

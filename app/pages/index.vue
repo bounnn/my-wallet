@@ -88,11 +88,28 @@ const weeks = computed(() => {
   });
 });
 
-// One week open at a time: opening a week closes the others. Starts on the newest week
-// (undefined = not picked yet), null = all closed
-const openWeek = ref<number | null>();
-const isWeekOpen = (key: number) => (openWeek.value === undefined ? weeks.value[0]?.key : openWeek.value) === key;
-watch([pickedMonth, () => wallet.value?.id], () => (openWeek.value = undefined));
+// Weeks open and close on their own, so two can be compared; the newest starts open
+// (undefined = not touched yet this month)
+const openWeeks = ref<Set<number>>();
+const isWeekOpen = (key: number) => (openWeeks.value ? openWeeks.value.has(key) : weeks.value[0]?.key === key);
+function setWeekOpen(key: number, open: boolean) {
+  const next = new Set(openWeeks.value ?? (weeks.value[0] ? [weeks.value[0].key] : []));
+  if (open) next.add(key);
+  else next.delete(key);
+  openWeeks.value = next;
+}
+watch([pickedMonth, () => wallet.value?.id], () => (openWeeks.value = undefined));
+
+// Empty month: point to the + button for this month, just say so for past ones
+const monthName = new Intl.DateTimeFormat(undefined, { month: "long" });
+const emptyText = computed(() =>
+  pickedMonth.value.compare(thisMonth) === 0 ? "Nothing yet. Tap + to add one" : `Nothing in ${monthName.format(month.value)}`,
+);
+
+// Backup reminder under the card once there's something to lose: never backed up, or over a month ago.
+// "Later" hides it for a week.
+const { backUp, saving: backingUp, isStale, isSnoozed, snooze, lastBackup } = useBackup();
+const showBackupReminder = computed(() => !!transactions.value?.length && isStale.value && !isSnoozed.value);
 
 // Categories split into Expenses and Income sections (a goal's category can be in both), biggest first
 function groupByCategory(type: Transaction["type"], typeTotal: number) {
@@ -181,6 +198,29 @@ function showDetails(t: Transaction) {
       <!-- The app's promise, scrolling edge to edge under the hero -->
       <MarqueeBanner text="Works offline - Your data never leaves this device" class="-mx-4 mt-8 w-auto" />
 
+      <!-- Backup reminder: the data only lives here, so a missing or old backup gets one quiet card -->
+      <div v-if="showBackupReminder" class="surface-card mt-8 rounded-2xl p-4">
+        <div class="flex items-center gap-3">
+          <IconTile icon="i-lucide-shield-alert" color="warning" size="sm" />
+          <div class="min-w-0 flex-1">
+            <p class="font-medium text-highlighted">{{ lastBackup ? "Time for a new backup" : "Back up your data" }}</p>
+            <p class="mt-0.5 text-sm text-muted">It only lives on this phone.</p>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <UButton label="Later" color="neutral" variant="ghost" class="h-11 flex-1 justify-center" @click="snooze" />
+          <UButton
+            label="Back up"
+            icon="i-lucide-download"
+            color="neutral"
+            variant="soft"
+            class="h-11 flex-1 justify-center bg-elevated"
+            :loading="backingUp"
+            @click="backUp"
+          />
+        </div>
+      </div>
+
       <!-- Transactions: by date (weeks) or by category -->
       <section class="mt-8">
         <div class="flex items-center justify-between gap-3">
@@ -213,7 +253,7 @@ function showDetails(t: Transaction) {
               <span class="h-2.5 w-14 rounded-full bg-elevated" />
             </li>
           </ul>
-          <p class="absolute inset-x-0 bottom-5 text-center text-sm font-medium text-muted">No transactions yet</p>
+          <p class="absolute inset-x-0 bottom-5 text-center text-sm font-medium text-muted">{{ emptyText }}</p>
         </div>
 
         <!-- Weeks (Monday first) joined in one card, each collapsible -->
@@ -229,7 +269,7 @@ function showDetails(t: Transaction) {
             hide-currency
             :category-by-id="categoryById"
             :wallet-by-id="walletById"
-            @update:open="openWeek = $event ? week.key : null"
+            @update:open="setWeekOpen(week.key, $event)"
             @select="showDetails"
           />
         </div>

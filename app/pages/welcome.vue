@@ -11,7 +11,7 @@ const current = computed(() => screens[screen.value]);
 const direction = ref<"forward" | "back">("forward");
 
 const name = ref("");
-const currency = ref("USD");
+const currency = ref(localCurrency());
 const amountText = ref("");
 
 // --- Name ---
@@ -85,7 +85,7 @@ async function create() {
   } catch (error) {
     toast.add({
       title: "Couldn't create your wallet",
-      description: error instanceof Error ? error.message : String(error),
+      description: errorText(error),
       color: "error",
       icon: "i-lucide-circle-alert",
     });
@@ -128,6 +128,7 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
       <div
         class="flex flex-1 gap-1.5"
         role="progressbar"
+        :aria-label="`Step ${screen} of ${setupSteps}`"
         :aria-valuenow="screen"
         aria-valuemin="1"
         :aria-valuemax="setupSteps"
@@ -206,7 +207,7 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
               :label="suggestion"
               color="neutral"
               variant="subtle"
-              size="sm"
+              class="h-11 px-4"
               @click="(name = suggestion), (nameError = undefined)"
             />
           </div>
@@ -347,7 +348,7 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
 
 /* Done: card drops into place */
 .card-land {
-  animation: land 600ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  animation: land 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes land {
   from {

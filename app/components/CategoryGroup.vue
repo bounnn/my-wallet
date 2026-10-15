@@ -14,17 +14,11 @@ const open = defineModel<boolean>("open", { default: false });
 // Tapping a transaction opens its details
 defineEmits<{ select: [transaction: Transaction] }>();
 
-const color = computed<CategoryColor>(() => props.category?.color ?? "primary");
 const count = computed(() => props.items.length);
 
-// Progress bar in the category color: faint tinted track, fill fading in from the left
-const barTrack = computed(() => ({
-  background: `color-mix(in oklab, var(--ui-${color.value}) 14%, transparent)`,
-}));
-const barFill = computed(() => ({
-  width: `${Math.max(props.share * 100, 4)}%`,
-  background: `linear-gradient(90deg, color-mix(in oklab, var(--ui-${color.value}) 45%, transparent), var(--ui-${color.value}))`,
-}));
+// Progress bar in the category color
+const barTrack = computed(() => barTrackStyle(props.category?.color));
+const barFill = computed(() => barFillStyle(props.category?.color, props.share, 4));
 </script>
 
 <template>

@@ -27,11 +27,10 @@ function pick(id: number) {
 
 // --- New category ---
 const icons = categoryIcons;
-const swatches = colorSwatches;
 
 const name = ref("");
 const icon = ref(icons[0]!);
-const color = ref<CategoryColor>("primary");
+const color = ref<CategoryColor>(DEFAULT_CATEGORY_COLOR);
 const nameError = ref<string>();
 const saving = ref(false);
 const toast = useToast();
@@ -39,7 +38,7 @@ const toast = useToast();
 function startNew() {
   name.value = "";
   icon.value = icons[0]!;
-  color.value = "primary";
+  color.value = DEFAULT_CATEGORY_COLOR;
   nameError.value = undefined;
   view.value = "new";
 }
@@ -67,7 +66,7 @@ async function create() {
   } catch (error) {
     toast.add({
       title: "Couldn't add the category",
-      description: error instanceof Error ? error.message : String(error),
+      description: errorText(error),
       color: "error",
       icon: "i-lucide-circle-alert",
     });
@@ -169,21 +168,7 @@ async function create() {
 
         <div>
           <p class="text-sm text-muted">Color</p>
-          <div class="mt-2 flex gap-3" role="radiogroup" aria-label="Color">
-            <button
-              v-for="(swatch, key) in swatches"
-              :key="key"
-              type="button"
-              role="radio"
-              :aria-checked="key === color"
-              :aria-label="key"
-              class="flex size-9 items-center justify-center rounded-full transition-transform"
-              :class="[swatch, key === color ? 'scale-110 ring-2 ring-white/80 ring-offset-2 ring-offset-(--ui-bg-muted)' : '']"
-              @click="color = key"
-            >
-              <UIcon v-if="key === color" name="i-lucide-check" class="size-4 text-white" />
-            </button>
-          </div>
+          <ColorPicker v-model="color" />
         </div>
 
         <UButton type="submit" label="Add category" size="xl" block :loading="saving" class="h-13 justify-center" />

@@ -36,6 +36,19 @@
   --color-midnight-800: #1c2442;
   --color-midnight-900: #10172e;
   --color-midnight-950: #060b1a;
+
+  /* Category colors, kept apart from the status colors (income, warning, error) so a category never reads
+     as a state. Distinct hues for the donut and bars, no violet. */
+  --color-cat-blue: #6a89f5;
+  --color-cat-sky: #38bdf8;
+  --color-cat-teal: #2dd4bf;
+  --color-cat-green: #4ade80;
+  --color-cat-lime: #a3e635;
+  --color-cat-yellow: #facc15;
+  --color-cat-orange: #fb923c;
+  --color-cat-red: #f87171;
+  --color-cat-pink: #f472b6;
+  --color-cat-slate: #94a3b8;
 }
 
 /* Dark mode only (forced in nuxt.config.ts); :root too so nothing flashes light before the .dark class lands */
@@ -52,6 +65,10 @@
   --ui-border: rgb(255 255 255 / 0.07);
   --ui-border-muted: rgb(255 255 255 / 0.05);
   --ui-border-accented: rgb(255 255 255 / 0.12);
+
+  /* Readable greys: muted ≥ 4.7:1 on every surface (page, cards, modals); dimmed ≥ 4.3:1, for hints only */
+  --ui-text-muted: #8a97c0;
+  --ui-text-dimmed: var(--ui-color-neutral-400);
 }
 
 /* App-like touch, no zoom at all: scrolling only, so no pinch-zoom and no double-tap zoom on fast repeated
