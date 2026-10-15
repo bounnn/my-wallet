@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDate, type DateValue } from "@internationalized/date";
+import { CalendarDate } from "@internationalized/date";
 
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
@@ -29,21 +29,12 @@ const balance = computed(() =>
     ),
 );
 
-// Month picker (UCalendar type="month"); future months are disabled
-const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+// Picked month (MonthPicker in the top bar) filters the whole screen
 const now = new Date();
 const thisMonth = new CalendarDate(now.getFullYear(), now.getMonth() + 1, 1);
 const pickedMonth = shallowRef<CalendarDate>(thisMonth);
-const monthPickerOpen = ref(false);
 
 const month = computed(() => new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1));
-const isFutureMonth = (d: DateValue) => d.year * 12 + d.month > thisMonth.year * 12 + thisMonth.month;
-
-function onPickMonth(value: DateValue | undefined) {
-  if (!value) return;
-  pickedMonth.value = new CalendarDate(value.year, value.month, 1);
-  monthPickerOpen.value = false;
-}
 
 const monthTransactions = computed(() => {
   const from = month.value;
@@ -143,25 +134,7 @@ watch(pickedMonth, () => (openWeek.value = undefined));
     <!-- Top bar: logo + month picker (filters the whole screen) -->
     <header class="flex h-12 items-center justify-between">
       <img src="/logo.svg" alt="My Wallet" class="size-9 rounded-full" />
-      <UPopover v-model:open="monthPickerOpen" :content="{ align: 'end', sideOffset: 8 }">
-        <UButton
-          :label="monthFormat.format(month)"
-          icon="i-lucide-calendar"
-          trailing-icon="i-lucide-chevron-down"
-          color="neutral"
-          variant="subtle"
-          class="tabular-nums"
-        />
-        <template #content>
-          <UCalendar
-            type="month"
-            :model-value="pickedMonth"
-            :is-month-disabled="isFutureMonth"
-            class="p-2"
-            @update:model-value="onPickMonth"
-          />
-        </template>
-      </UPopover>
+      <MonthPicker v-model="pickedMonth" />
     </header>
 
     <!-- Hero: total balance + this month's income and expenses -->

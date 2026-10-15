@@ -60,7 +60,11 @@ export default defineAppConfig({
           },
         },
       },
-      compoundVariants: [{ variant: "pill", class: { trigger: "data-[state=active]:text-white" } }],
+      compoundVariants: [
+        { variant: "pill", class: { trigger: "data-[state=active]:text-white" } },
+        // Active pill wears the primary gradient, like the main buttons
+        { color: "primary", variant: "pill", class: { indicator: "btn-primary-gradient" } },
+      ],
     },
 
     popover: { slots: { content: "rounded-xl" } },
