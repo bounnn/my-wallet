@@ -1,8 +1,9 @@
 import { liveQuery } from "dexie";
 
 /**
- * Reactive Dexie query: re-runs whenever the queried tables change
- * or any reactive source read inside `querier` (before its first await) changes.
+ * Reactive Dexie query: re-runs whenever the queried tables change.
+ * Don't read props or refs inside `querier`: Dexie may run it outside Vue's tracking, so it won't re-run when
+ * they change. Query the whole table and filter in a computed instead (see GoalMoneyModal's wallet).
  */
 export function useLiveQuery<T>(querier: () => T | Promise<T>, initialValue?: T) {
   const value = shallowRef<T | undefined>(initialValue);

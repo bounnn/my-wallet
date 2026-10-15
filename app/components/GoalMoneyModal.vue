@@ -4,10 +4,10 @@
 const props = defineProps<{ goal?: Goal; category?: Category; saved: number; mode: "add" | "take" }>();
 const open = defineModel<boolean>("open", { required: true });
 
-const { value: wallet } = useLiveQuery(() => {
-  const id = props.goal?.accountId;
-  return id === undefined ? undefined : db.accounts.get(id);
-});
+// All wallets live, then the goal's one picked reactively (a live query reading props.goal wouldn't re-run
+// when the modal opens for another goal, so it stayed empty and saving said the wallet was deleted)
+const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
+const wallet = computed(() => wallets.value?.find((w) => w.id === props.goal?.accountId));
 
 const currency = computed(() => props.goal?.currency ?? "USD");
 
