@@ -142,7 +142,7 @@ const barFill = (color: CategoryColor, share: number) => ({
       />
 
       <!-- Chart card: donut by category or a 6-month trend -->
-      <section class="surface-card mt-5 rounded-2xl p-4">
+      <section class="surface-card mt-4 rounded-2xl p-4">
         <div class="flex items-center justify-between gap-3">
           <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">{{ typeName }} report</h2>
           <div class="flex gap-1 rounded-full bg-elevated p-1" role="group" aria-label="Chart type">

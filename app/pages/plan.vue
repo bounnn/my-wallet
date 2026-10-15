@@ -256,7 +256,7 @@ const copyModalOpen = ref(false);
         <button
           v-if="!goalCards.length"
           type="button"
-          class="mt-3 flex w-full items-center gap-4 rounded-2xl border border-dashed border-accented px-4 py-5 text-left transition-colors hover:bg-muted"
+          class="mt-3 flex w-full items-center gap-4 rounded-2xl border border-dashed border-accented px-4 py-4 text-left transition-colors hover:bg-muted"
           @click="newGoal"
         >
           <IconTile icon="i-lucide-piggy-bank" />
