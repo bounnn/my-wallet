@@ -47,7 +47,8 @@ export default defineNuxtConfig({
     },
     workbox: {
       globPatterns: ["**/*.{js,css,html,png,svg,ico,woff2}"],
-      navigateFallback: "/",
+      // The app's base path: "/" locally, "/my-wallet/" on GitHub Pages (NUXT_APP_BASE_URL, set by the deploy workflow)
+      navigateFallback: process.env.NUXT_APP_BASE_URL || "/",
     },
     client: {
       installPrompt: true,
