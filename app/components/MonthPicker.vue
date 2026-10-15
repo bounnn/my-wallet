@@ -11,7 +11,8 @@ const open = ref(false);
 
 const isFutureMonth = (d: DateValue) => d.year * 12 + d.month > thisMonth.year * 12 + thisMonth.month;
 
-function onPick(value: DateValue | undefined) {
+function onPick(picked: unknown) {
+  const value = calendarPick(picked);
   if (!value) return;
   month.value = new CalendarDate(value.year, value.month, 1);
   open.value = false;

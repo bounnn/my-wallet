@@ -52,6 +52,10 @@ export function parseAmount(text: string, currency: string) {
   return toMinor(Number.parseFloat(clean), currency);
 }
 
+// Text size for a big card amount: long ones (e.g. LAK) shrink instead of breaking mid-number
+export const amountSizeClass = (text: string) =>
+  text.length > 16 ? "text-lg" : text.length > 12 ? "text-xl" : "text-2xl";
+
 export function currencySymbol(currency: string) {
   return (
     new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" })

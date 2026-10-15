@@ -1,3 +1,8 @@
+<script setup lang="ts">
+// Pages set their own title ("Report - My Wallet"); home has none, so it's just the app name
+useHead({ titleTemplate: (title) => (title ? `${title} - My Wallet` : "My Wallet") });
+</script>
+
 <template>
   <UApp>
     <NuxtPwaAssets />

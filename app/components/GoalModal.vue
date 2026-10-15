@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CalendarDate, getLocalTimeZone, type DateValue } from "@internationalized/date";
+import type { FormSubmitEvent } from "@nuxt/ui";
 import * as v from "valibot";
 
 // Create a savings goal in `wallet`, or edit one when `goal` is given: name, target, optional due date, icon, color.
@@ -18,13 +19,15 @@ const icons = [
 ];
 
 const currency = computed(() => props.goal?.currency ?? props.wallet?.currency ?? "USD");
-const name = ref("");
-const targetText = ref("");
-const icon = ref(icons[0]!);
-const color = ref<CategoryColor>(DEFAULT_CATEGORY_COLOR);
+const state = reactive({
+  name: "",
+  target: "",
+  icon: icons[0]!,
+  color: DEFAULT_CATEGORY_COLOR,
+});
+// Optional, so nothing to validate; kept out of the form state, which would unwrap the CalendarDate class
 const deadline = shallowRef<CalendarDate>();
 const calendarOpen = ref(false);
-const errors = ref<{ name?: string; target?: string }>({});
 
 const now = new Date();
 const today = new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
@@ -35,18 +38,18 @@ watch(open, (isOpen) => {
   if (!isOpen) return;
   const g = props.goal;
   const category = g && categories.value?.find((c) => c.id === g.categoryId);
-  name.value = category?.name ?? "";
-  targetText.value = g ? formatAmount(g.target, g.currency) : "";
-  icon.value = category?.icon ?? icons[0]!;
-  color.value = category?.color ?? DEFAULT_CATEGORY_COLOR;
+  state.name = category?.name ?? "";
+  state.target = g ? formatAmount(g.target, g.currency) : "";
+  state.icon = category?.icon ?? icons[0]!;
+  state.color = category?.color ?? DEFAULT_CATEGORY_COLOR;
   deadline.value = g?.deadline
     ? new CalendarDate(g.deadline.getFullYear(), g.deadline.getMonth() + 1, g.deadline.getDate())
     : undefined;
   calendarOpen.value = false;
-  errors.value = {};
 });
 
-function onPickDay(value: DateValue | undefined) {
+function onPickDay(picked: unknown) {
+  const value = calendarPick(picked);
   if (!value) return;
   deadline.value = new CalendarDate(value.year, value.month, value.day);
   calendarOpen.value = false;
@@ -67,36 +70,25 @@ const schema = v.object({
       "You already have a category with this name",
     ),
   ),
-  target: v.pipe(v.number(), v.check(Number.isFinite, "Enter a number"), v.minValue(1, "Enter a target above 0")),
+  target: v.pipe(
+    v.string(),
+    v.transform((text) => parseAmount(text, currency.value)),
+    v.check((n: number) => Number.isFinite(n), "Enter a number"),
+    v.minValue(1, "Enter a target above 0"),
+  ),
+  icon: v.string(),
+  color: v.picklist(categoryColorKeys),
 });
 
-const saving = ref(false);
 const toast = useToast();
 
-async function save() {
-  const result = v.safeParse(schema, { name: name.value, target: parseAmount(targetText.value, currency.value) });
-  if (!result.success) {
-    const nested = v.flatten<typeof schema>(result.issues).nested ?? {};
-    errors.value = { name: nested.name?.[0], target: nested.target?.[0] };
-    return;
-  }
-
-  const category = { name: result.output.name, icon: icon.value, color: color.value };
-  const fields = { target: result.output.target, deadline: deadline.value?.toDate(getLocalTimeZone()) };
-  const goal = props.goal;
-  saving.value = true;
+async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
+  const category = { name: data.name, icon: data.icon, color: data.color };
+  const fields = { target: data.target, deadline: deadline.value?.toDate(getLocalTimeZone()) };
   try {
-    await db.transaction("rw", db.goals, db.categories, async () => {
-      if (goal) {
-        await db.categories.update(goal.categoryId, category);
-        await db.goals.update(goal.id, fields);
-      } else {
-        if (!props.wallet) throw new UserError("Add a wallet first");
-        const accountId = props.wallet.id;
-        const categoryId = await db.categories.add({ ...category, type: "expense" });
-        await db.goals.add({ ...fields, accountId, categoryId, currency: currency.value, initialSaved: 0, createdAt: new Date() });
-      }
-    });
+    if (props.goal) await updateGoal(props.goal, category, fields);
+    else if (props.wallet) await addGoal(props.wallet.id, category, fields);
+    else throw new UserError("Add a wallet first");
     open.value = false;
   } catch (error) {
     toast.add({
@@ -105,8 +97,6 @@ async function save() {
       color: "error",
       icon: "i-lucide-circle-alert",
     });
-  } finally {
-    saving.value = false;
   }
 }
 </script>
@@ -114,34 +104,23 @@ async function save() {
 <template>
   <UModal v-model:open="open" :title="goal ? 'Edit goal' : 'New goal'">
     <template #body>
-      <form class="space-y-5" @submit.prevent="save">
+      <UForm :schema="schema" :state="state" class="space-y-5" @submit="save">
         <!-- One grouped card like the add screen: name (with a live icon preview), target, due date -->
         <div class="divide-y divide-default rounded-2xl bg-elevated">
-          <label class="flex items-center gap-3 px-4 py-3">
-            <IconTile :icon="icon" :color="color" size="sm" />
-            <span class="min-w-0 flex-1">
-              <span class="block text-xs" :class="errors.name ? 'text-error' : 'text-muted'">{{ errors.name ?? "Name" }}</span>
-              <input
-                v-model="name"
-                placeholder="What are you saving for?"
-                maxlength="30"
-                autocomplete="off"
-                enterkeyhint="next"
-                aria-label="Goal name"
-                :aria-invalid="!!errors.name"
-                class="w-full bg-transparent font-medium text-highlighted caret-primary outline-none placeholder:text-dimmed"
-                @input="errors.name = undefined"
-              />
-            </span>
-          </label>
+          <FieldRow
+            v-model="state.name"
+            name="name"
+            label="Name"
+            placeholder="What are you saving for?"
+            :maxlength="30"
+            enterkeyhint="next"
+          >
+            <template #leading>
+              <IconTile :icon="state.icon" :color="state.color" size="sm" />
+            </template>
+          </FieldRow>
 
-          <AmountField
-            v-model="targetText"
-            label="Target"
-            :currency="currency"
-            :error="errors.target"
-            @update:model-value="errors.target = undefined"
-          />
+          <AmountField v-model="state.target" name="target" label="Target" :currency="currency" />
 
           <!-- Optional due date; the calendar opens in place -->
           <div>
@@ -188,11 +167,11 @@ async function save() {
               :key="i"
               type="button"
               role="radio"
-              :aria-checked="i === icon"
+              :aria-checked="i === state.icon"
               :aria-label="i.replace('i-lucide-', '').replaceAll('-', ' ')"
               class="flex aspect-square items-center justify-center rounded-xl transition-colors"
-              :class="i === icon ? 'bg-primary/20 text-navy-100' : 'text-muted hover:bg-elevated'"
-              @click="icon = i"
+              :class="i === state.icon ? 'bg-primary/20 text-navy-100' : 'text-muted hover:bg-elevated'"
+              @click="state.icon = i"
             >
               <UIcon :name="i" class="size-5" />
             </button>
@@ -201,7 +180,7 @@ async function save() {
 
         <div>
           <p class="text-sm text-muted">Color</p>
-          <ColorPicker v-model="color" />
+          <ColorPicker v-model="state.color" />
         </div>
 
         <UButton
@@ -209,10 +188,10 @@ async function save() {
           :label="goal ? 'Save goal' : 'Add goal'"
           size="xl"
           block
-          :loading="saving"
+          loading-auto
           class="h-13 justify-center"
         />
-      </form>
+      </UForm>
     </template>
   </UModal>
 </template>

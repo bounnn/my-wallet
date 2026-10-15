@@ -15,7 +15,8 @@ const props = defineProps<{
   color: "success" | "error";
   // Income going up is good, expenses going up is bad; sets the change chip color
   upIsGood: boolean;
-  ariaLabel: string;
+  // Read out for the chart as a whole
+  label: string;
 }>();
 const selected = defineModel<number | null>("selected", { default: null });
 
@@ -73,7 +74,7 @@ const tint = computed(() => ({
       </span>
     </div>
 
-    <div class="relative mt-6 h-52" role="group" :aria-label="ariaLabel">
+    <div class="relative mt-6 h-52" role="group" :aria-label="label">
       <!-- Average line -->
       <div
         v-if="average && max"

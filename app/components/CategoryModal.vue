@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import * as v from "valibot";
-
 // Pick a category for the given type, or create a new one (which is then picked).
 // Categories are shared by all wallets, except a goal's, which only shows for the goal's wallet (`accountId`).
 const props = defineProps<{ type: Category["type"]; accountId?: number; selectedId?: number }>();
@@ -20,59 +18,10 @@ const typeCategories = computed(() =>
 const view = ref<"pick" | "new">("pick");
 watch(open, (isOpen) => isOpen && (view.value = "pick"));
 
+// Picking, or creating one in the "New" view, closes the modal
 function pick(id: number) {
   emit("select", id);
   open.value = false;
-}
-
-// --- New category ---
-const icons = categoryIcons;
-
-const name = ref("");
-const icon = ref(icons[0]!);
-const color = ref<CategoryColor>(DEFAULT_CATEGORY_COLOR);
-const nameError = ref<string>();
-const saving = ref(false);
-const toast = useToast();
-
-function startNew() {
-  name.value = "";
-  icon.value = icons[0]!;
-  color.value = DEFAULT_CATEGORY_COLOR;
-  nameError.value = undefined;
-  view.value = "new";
-}
-
-const nameSchema = v.pipe(
-  v.string(),
-  v.trim(),
-  v.minLength(1, "Give the category a name"),
-  v.maxLength(30, "Keep it under 30 characters"),
-  v.check(
-    (n) => !typeCategories.value.some((c) => c.name.toLowerCase() === n.toLowerCase()),
-    "You already have this category",
-  ),
-);
-
-async function create() {
-  const result = v.safeParse(nameSchema, name.value);
-  nameError.value = result.success ? undefined : result.issues[0].message;
-  if (!result.success) return;
-
-  saving.value = true;
-  try {
-    const id = await db.categories.add({ name: result.output, type: props.type, icon: icon.value, color: color.value });
-    pick(id);
-  } catch (error) {
-    toast.add({
-      title: "Couldn't add the category",
-      description: errorText(error),
-      color: "error",
-      icon: "i-lucide-circle-alert",
-    });
-  } finally {
-    saving.value = false;
-  }
 }
 </script>
 
@@ -116,7 +65,7 @@ async function create() {
         <button
           type="button"
           class="flex min-w-0 flex-col items-center gap-1.5 rounded-2xl px-1 py-2.5 transition-colors hover:bg-elevated/50"
-          @click="startNew"
+          @click="view = 'new'"
         >
           <span class="flex size-12 items-center justify-center rounded-2xl border border-dashed border-accented text-muted">
             <UIcon name="i-lucide-plus" class="size-6" />
@@ -126,53 +75,7 @@ async function create() {
       </div>
 
       <!-- New: name, icon, color with a live preview -->
-      <form v-else class="space-y-5" @submit.prevent="create">
-        <div class="flex items-center gap-3">
-          <IconTile :icon="icon" :color="color" />
-          <div class="min-w-0 flex-1">
-            <UInput
-              v-model="name"
-              placeholder="Category name"
-              maxlength="30"
-              autofocus
-              autocomplete="off"
-              enterkeyhint="done"
-              aria-label="Category name"
-              :aria-invalid="!!nameError"
-              size="lg"
-              class="w-full"
-              @update:model-value="nameError = undefined"
-            />
-          </div>
-        </div>
-        <p v-if="nameError" class="-mt-3 text-sm text-error">{{ nameError }}</p>
-
-        <div>
-          <p class="text-sm text-muted">Icon</p>
-          <div class="mt-2 grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Icon">
-            <button
-              v-for="i in icons"
-              :key="i"
-              type="button"
-              role="radio"
-              :aria-checked="i === icon"
-              :aria-label="i.replace('i-lucide-', '').replaceAll('-', ' ')"
-              class="flex aspect-square items-center justify-center rounded-xl transition-colors"
-              :class="i === icon ? 'bg-primary/20 text-navy-100' : 'text-muted hover:bg-elevated'"
-              @click="icon = i"
-            >
-              <UIcon :name="i" class="size-5" />
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <p class="text-sm text-muted">Color</p>
-          <ColorPicker v-model="color" />
-        </div>
-
-        <UButton type="submit" label="Add category" size="xl" block :loading="saving" class="h-13 justify-center" />
-      </form>
+      <CategoryForm v-else :type="type" autofocus @saved="pick" />
     </template>
   </UModal>
 </template>

@@ -11,7 +11,8 @@ export interface DonutSegment {
   valueLabel?: string;
 }
 
-const props = defineProps<{ segments: DonutSegment[]; ariaLabel: string }>();
+// `label` is read out for the chart as a whole
+const props = defineProps<{ segments: DonutSegment[]; label: string }>();
 const selected = defineModel<number | null>("selected", { default: null });
 
 const SIZE = 220;
@@ -53,7 +54,7 @@ const arcs = computed(() => {
     const arc = {
       ...segment,
       width,
-      cap: round ? "round" : "butt",
+      cap: round ? ("round" as const) : ("butt" as const),
       dash: `${grown.value ? length : 0} ${CIRCUMFERENCE}`,
       offset: -offset,
       from,
@@ -72,7 +73,7 @@ function toggle(segmentId: number) {
 
 <template>
   <div class="relative mx-auto aspect-square w-full max-w-64">
-    <svg :viewBox="`0 0 ${SIZE} ${SIZE}`" class="size-full" role="group" :aria-label="ariaLabel">
+    <svg :viewBox="`0 0 ${SIZE} ${SIZE}`" class="size-full" role="group" :aria-label="label">
       <!-- Empty month: a plain track ring -->
       <circle
         v-if="!arcs.length"

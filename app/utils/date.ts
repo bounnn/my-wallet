@@ -1,3 +1,11 @@
+import type { DateValue } from "@internationalized/date";
+
+// The date a UCalendar picked. Its update event is typed for range and multiple modes too, which the
+// single-date pickers here don't use, so anything else is undefined.
+export function calendarPick(value: unknown) {
+  return value && typeof value === "object" && "day" in value ? (value as DateValue) : undefined;
+}
+
 // Fixed DD/MM/YYYY, whatever the device locale, e.g. "14/10/2026"
 export function formatDate(date: Date) {
   const dd = String(date.getDate()).padStart(2, "0");

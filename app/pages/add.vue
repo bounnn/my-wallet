@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import {
-  CalendarDate,
-  getLocalTimeZone,
-  type DateValue,
-} from "@internationalized/date";
+import { CalendarDate, getLocalTimeZone } from "@internationalized/date";
+import type { FormSubmitEvent } from "@nuxt/ui";
 import * as v from "valibot";
 
 definePageMeta({ layout: false });
 
 // /add?id=12 edits that transaction instead of adding a new one
 const editId = Number(useRoute().query.id) || undefined;
+useHead({ title: editId ? "Edit transaction" : "Add transaction" });
 
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
@@ -54,16 +52,6 @@ const walletOpen = ref(false);
 // the amount once = is pressed (the keypad then replaces it with the result) ---
 const amountText = ref("");
 const digits = computed(() => currencyDigits(currency.value));
-const isExpression = computed(() => hasOperator(amountText.value));
-const amount = computed(() => {
-  const n = Number.parseFloat(amountText.value);
-  return Number.isFinite(n) ? toMinor(n, currency.value) : 0;
-});
-const amountDisplay = computed(() =>
-  isExpression.value
-    ? formatExpression(amountText.value)
-    : formatAmountInput(amountText.value),
-);
 
 // --- Category: picked in a modal ---
 const categoryId = ref<number>();
@@ -77,29 +65,11 @@ function setType(value: Transaction["type"]) {
   type.value = value;
 }
 
-// --- Date: today by default; Today / Yesterday are one tap, other days in a calendar modal ---
+// --- Date: today by default (DayPicker) ---
 const now = new Date();
-const today = new CalendarDate(
-  now.getFullYear(),
-  now.getMonth() + 1,
-  now.getDate(),
+const pickedDay = shallowRef(
+  new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate()),
 );
-const yesterday = today.subtract({ days: 1 });
-const pickedDay = shallowRef<CalendarDate>(today);
-const calendarOpen = ref(false);
-const pickedDate = computed(() => pickedDay.value.toDate(getLocalTimeZone()));
-const isOtherDay = computed(
-  () =>
-    pickedDay.value.compare(today) !== 0 &&
-    pickedDay.value.compare(yesterday) !== 0,
-);
-const isFutureDay = (d: DateValue) => d.compare(today) > 0;
-
-function onPickDay(value: DateValue | undefined) {
-  if (!value) return;
-  pickedDay.value = new CalendarDate(value.year, value.month, value.day);
-  calendarOpen.value = false;
-}
 
 // --- Note: typing it swaps the keypad for the phone keyboard ---
 const note = ref("");
@@ -115,7 +85,7 @@ function onNoteFocus() {
 function onNoteBlur() {
   keypadTimer = setTimeout(() => (noteFocused.value = false), 150);
 }
-const closeKeyboard = () => noteInput.value?.blur();
+const closeKeyboard = () => noteInput.value?.textareaRef?.blur();
 
 // The keypad can be slid down to see the whole form; tapping the amount brings it back
 const keypadOpen = ref(true);
@@ -124,18 +94,6 @@ function openKeypad() {
   closeKeyboard();
   keypadOpen.value = true;
 }
-
-// The note grows with its text, up to 3 lines (max-h on the textarea), then scrolls
-watch(
-  note,
-  () => {
-    const el = noteInput.value;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  },
-  { flush: "post" },
-);
 
 // Keep the screen (and its Save button) above the on-screen keyboard
 const viewport = useVisualViewport();
@@ -150,7 +108,7 @@ onMounted(async () => {
   if (!t) return navigateTo("/", { replace: true });
   const w = await db.accounts.get(t.accountId);
   editing.value = t;
-  goal.value = await db.goals.where("categoryId").equals(t.categoryId).first();
+  goal.value = await goalByCategory(t.categoryId);
   type.value = t.type;
   accountId.value = t.accountId;
   categoryId.value = t.categoryId;
@@ -162,8 +120,27 @@ onMounted(async () => {
 });
 
 // --- Save ---
+// The form's state is the refs above (reactive unwraps them, so the form reads and writes the same values)
+const state = reactive({ amount: amountText, categoryId, accountId, note });
 const schema = v.object({
-  amount: v.pipe(v.number(), v.minValue(1, "Enter an amount above 0")),
+  amount: v.pipe(
+    v.string(),
+    // An unfinished sum isn't an amount yet
+    v.check(
+      (text) => !hasOperator(text),
+      ({ input }) => {
+        const total = evaluateExpression(String(input));
+        return Number.isFinite(total) && total > 0
+          ? "Press = to get the total"
+          : "This sum doesn't give an amount above 0";
+      },
+    ),
+    v.transform((text) => {
+      const n = Number.parseFloat(text);
+      return Number.isFinite(n) ? toMinor(n, currency.value) : 0;
+    }),
+    v.minValue(1, "Enter an amount above 0"),
+  ),
   categoryId: v.number("Pick a category"),
   accountId: v.number("Pick a wallet"),
   note: v.pipe(
@@ -172,56 +149,19 @@ const schema = v.object({
     v.maxLength(100, "Keep the note under 100 characters"),
   ),
 });
-const errors = ref<v.FlatErrors<typeof schema>["nested"]>({});
-watch(amountText, () => (errors.value.amount = undefined));
-watch(categoryId, () => (errors.value.categoryId = undefined));
-watch(note, () => (errors.value.note = undefined));
 
-const saving = ref(false);
+// The keypad and the category / wallet pickers aren't form inputs, so a change clears their error by hand
+const form = useTemplateRef("form");
+watch(amountText, () => form.value?.clear("amount"));
+watch(categoryId, () => form.value?.clear("categoryId"));
+
 const toast = useToast();
 
-async function save() {
-  const result = v.safeParse(schema, {
-    amount: amount.value,
-    categoryId: categoryId.value,
-    accountId: accountId.value,
-    note: note.value,
-  });
-  if (!result.success || isExpression.value) {
-    errors.value = result.success
-      ? {}
-      : (v.flatten<typeof schema>(result.issues).nested ?? {});
-    // An unfinished sum isn't an amount yet
-    if (isExpression.value) {
-      const total = evaluateExpression(amountText.value);
-      errors.value.amount = [
-        Number.isFinite(total) && total > 0
-          ? "Press = to get the total"
-          : "This sum doesn't give an amount above 0",
-      ];
-    }
-    return;
-  }
-
-  // A goal's saved amount can't go below 0 (same rule as taking money out on the plan screen)
-  if (goal.value) {
-    const others = await loadGoalSaved(goal.value, editing.value?.id);
-    const amount = result.output.amount;
-    if (others + (type.value === "expense" ? amount : -amount) < 0) {
-      errors.value.amount = [
-        type.value === "income"
-          ? `Only ${formatMoney(Math.max(others, 0), goal.value.currency)} saved`
-          : `At least ${formatMoney(-others, goal.value.currency)}, it was taken out since`,
-      ];
-      return;
-    }
-  }
-
+async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
   // The picked day at the current time, so same-day entries keep their order.
   // An edit keeps the transaction's own time.
-  const now = new Date();
-  const time = editing.value?.date ?? now;
-  const day = pickedDate.value;
+  const time = editing.value?.date ?? new Date();
+  const day = pickedDay.value.toDate(getLocalTimeZone());
   const date = new Date(
     day.getFullYear(),
     day.getMonth(),
@@ -231,35 +171,32 @@ async function save() {
     time.getSeconds(),
   );
 
-  saving.value = true;
   try {
-    const fields = {
-      accountId: result.output.accountId,
-      categoryId: result.output.categoryId,
-      type: type.value,
-      amount: result.output.amount,
-      note: result.output.note || undefined,
-      date,
-    };
-    if (editing.value) await db.transactions.update(editing.value.id, fields);
-    else await db.transactions.add({ ...fields, createdAt: now });
-    toast.add({
-      title: editing.value ? "Changes saved" : type.value === "income" ? "Income added" : "Expense added",
-      description: formatMoney(result.output.amount, currency.value),
-      color: "success",
-      icon: "i-lucide-circle-check",
-    });
-    close();
+    await saveTransaction(
+      { ...data, type: type.value, note: data.note || undefined, date },
+      editing.value?.id,
+    );
   } catch (err) {
+    // A goal's saved amount can't go below 0; that's about the amount, so it shows there
+    if (err instanceof UserError) {
+      form.value?.setErrors([{ name: "amount", message: err.message }], "amount");
+      return;
+    }
     toast.add({
       title: "Couldn't save the transaction",
       description: errorText(err),
       color: "error",
       icon: "i-lucide-circle-alert",
     });
-  } finally {
-    saving.value = false;
+    return;
   }
+  toast.add({
+    title: editing.value ? "Changes saved" : type.value === "income" ? "Income added" : "Expense added",
+    description: formatMoney(data.amount, currency.value),
+    color: "success",
+    icon: "i-lucide-circle-check",
+  });
+  close();
 }
 
 // Go back when the screen was opened from inside the app, otherwise home (e.g. after a reload)
@@ -267,11 +204,6 @@ function close() {
   if (window.history.state?.back) useRouter().back();
   else navigateTo("/", { replace: true });
 }
-
-const chip = (active: boolean) =>
-  active
-    ? "bg-primary/20 text-navy-100"
-    : "bg-elevated text-muted hover:text-toned";
 </script>
 
 <template>
@@ -321,153 +253,80 @@ const chip = (active: boolean) =>
       />
     </header>
 
-    <form
+    <UForm
       id="add-transaction"
+      ref="form"
+      :schema="schema"
+      :state="state"
       class="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-4"
-      @submit.prevent="save"
+      @submit="save"
     >
       <!-- Fields in priority order: amount and category first, prefilled details below -->
       <div class="divide-y divide-default rounded-2xl bg-muted">
         <!-- 1. Amount (hero); tapping it brings the keypad back -->
-        <div class="px-4 pt-3 pb-4" @click="openKeypad">
-          <div class="flex items-center justify-between">
-            <span
-              class="text-sm"
-              :class="errors.amount ? 'text-error' : 'text-muted'"
-            >
-              {{ errors.amount?.[0] ?? "Amount" }}
-            </span>
-            <span
-              class="rounded-md bg-elevated px-1.5 py-0.5 text-xs font-medium text-toned"
-              >{{ currency }}</span
-            >
-          </div>
-          <div class="mt-1 flex h-14 items-center">
-            <p
-              class="flex min-w-0 flex-1 items-baseline gap-1.5 font-display font-bold tracking-tight tabular-nums"
-              aria-live="polite"
-            >
-              <span class="text-2xl text-dimmed">{{
-                currencySymbol(currency)
-              }}</span>
-              <span
-                class="truncate transition-colors"
-                :class="[
-                  amountDisplay.length > 14
-                    ? 'text-3xl'
-                    : amountDisplay.length > 9
-                      ? 'text-4xl'
-                      : 'text-5xl',
-                  !amountText
-                    ? 'text-dimmed'
-                    : isExpression
-                      ? 'text-toned'
-                      : type === 'income'
-                        ? 'text-success'
-                        : 'text-highlighted',
-                ]"
-                ><template v-if="!isExpression">{{
-                  type === "income" ? "+" : "-"
-                }}</template
-                >{{ amountDisplay }}</span
-              >
-              <span
-                v-if="showKeypad"
-                class="caret h-9 w-0.5 self-center rounded-full bg-primary"
-                aria-hidden="true"
-              />
-            </p>
-          </div>
-        </div>
+        <UFormField name="amount" :ui="{ error: 'sr-only' }">
+          <template #default="{ error }">
+            <AmountDisplay
+              :text="amountText"
+              :currency="currency"
+              :type="type"
+              :typing="showKeypad"
+              :error="error"
+              @click="openKeypad"
+            />
+          </template>
+        </UFormField>
 
         <!-- 2. Category: opens the category modal (fixed for a goal's money) -->
-        <button
-          type="button"
-          class="flex w-full items-center gap-3 px-4 py-3 text-left"
-          :disabled="!!goal"
-          @click="categoryOpen = true"
-        >
-          <IconTile
-            v-if="category"
-            :icon="category.icon ?? 'i-lucide-tag'"
-            :color="category.color"
-            size="sm"
-          />
-          <span
-            v-else
-            class="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-dashed"
-            :class="
-              errors.categoryId
-                ? 'border-error text-error'
-                : 'border-accented text-dimmed'
-            "
-          >
-            <UIcon name="i-lucide-shapes" class="size-5" />
-          </span>
-          <span class="min-w-0 flex-1">
-            <span
-              class="block text-xs"
-              :class="errors.categoryId ? 'text-error' : 'text-muted'"
+        <UFormField name="categoryId" :ui="{ error: 'sr-only' }">
+          <template #default="{ error }">
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 px-4 py-3 text-left"
+              :disabled="!!goal"
+              @click="categoryOpen = true"
             >
-              {{ errors.categoryId?.[0] ?? (goal ? "Goal" : "Category") }}
-            </span>
-            <span
-              class="block truncate font-medium"
-              :class="category ? 'text-highlighted' : 'text-dimmed'"
-              >{{ category?.name ?? "Select category" }}</span
-            >
-          </span>
-          <UIcon
-            v-if="!goal"
-            name="i-lucide-chevron-right"
-            class="size-5 shrink-0 text-dimmed"
-          />
-        </button>
+              <IconTile
+                v-if="category"
+                :icon="category.icon ?? 'i-lucide-tag'"
+                :color="category.color"
+                size="sm"
+              />
+              <span
+                v-else
+                class="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-dashed"
+                :class="
+                  error
+                    ? 'border-error text-error'
+                    : 'border-accented text-dimmed'
+                "
+              >
+                <UIcon name="i-lucide-shapes" class="size-5" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span
+                  class="block text-xs"
+                  :class="error ? 'text-error' : 'text-muted'"
+                >
+                  {{ error || (goal ? "Goal" : "Category") }}
+                </span>
+                <span
+                  class="block truncate font-medium"
+                  :class="category ? 'text-highlighted' : 'text-dimmed'"
+                  >{{ category?.name ?? "Select category" }}</span
+                >
+              </span>
+              <UIcon
+                v-if="!goal"
+                name="i-lucide-chevron-right"
+                class="size-5 shrink-0 text-dimmed"
+              />
+            </button>
+          </template>
+        </UFormField>
 
         <!-- 3. Details: already filled in, change only when needed -->
-        <div class="flex items-center gap-3 px-4 py-2">
-          <UIcon name="i-lucide-calendar" class="size-5 shrink-0 text-dimmed" />
-          <div
-            class="flex min-w-0 flex-1 gap-1.5"
-            role="group"
-            aria-label="Date"
-          >
-            <button
-              type="button"
-              class="h-11 rounded-full px-3.5 text-sm font-medium transition-colors"
-              :class="chip(pickedDay.compare(today) === 0)"
-              :aria-pressed="pickedDay.compare(today) === 0"
-              @click="pickedDay = today"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              class="h-11 rounded-full px-3.5 text-sm font-medium transition-colors"
-              :class="chip(pickedDay.compare(yesterday) === 0)"
-              :aria-pressed="pickedDay.compare(yesterday) === 0"
-              @click="pickedDay = yesterday"
-            >
-              Yesterday
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-full px-3.5 text-sm font-medium transition-colors"
-              :class="chip(isOtherDay)"
-              :aria-label="
-                isOtherDay
-                  ? `Date: ${dayLabel(pickedDate)}`
-                  : 'Pick another day'
-              "
-              @click="calendarOpen = true"
-            >
-              <span v-if="isOtherDay" class="truncate">{{
-                dayLabel(pickedDate)
-              }}</span>
-              <UIcon v-else name="i-lucide-ellipsis" class="size-4" />
-            </button>
-          </div>
-        </div>
+        <DayPicker v-model="pickedDay" />
 
         <button
           v-if="walletChoices.length > 1"
@@ -486,44 +345,47 @@ const chip = (active: boolean) =>
           />
         </button>
 
-        <label class="flex min-h-12 items-start gap-3 px-4 py-3">
-          <UIcon
-            name="i-lucide-pen-line"
-            class="mt-0.5 size-5 shrink-0"
-            :class="noteFocused ? 'text-primary' : 'text-dimmed'"
-          />
-          <!-- Grows to 3 lines; Enter closes the keyboard instead of adding a line break -->
-          <textarea
-            ref="noteInput"
-            v-model="note"
-            rows="1"
-            placeholder="Add a note"
-            maxlength="100"
-            autocomplete="off"
-            enterkeyhint="done"
-            aria-label="Note"
-            class="max-h-[4.5rem] min-w-0 flex-1 resize-none bg-transparent text-base leading-6 text-highlighted outline-none placeholder:text-dimmed"
-            @focus="onNoteFocus"
-            @blur="onNoteBlur"
-            @keydown.enter.prevent="closeKeyboard"
-          />
-          <!-- mousedown.prevent keeps the keyboard open while clearing -->
-          <button
-            v-if="note"
-            type="button"
-            aria-label="Clear note"
-            class="-my-2.5 -mr-2.5 flex size-11 shrink-0 items-center justify-center rounded-full text-dimmed transition-colors hover:text-toned"
-            @mousedown.prevent
-            @click="note = ''"
-          >
-            <UIcon name="i-lucide-circle-x" class="size-5" />
-          </button>
-        </label>
+        <UFormField name="note" :ui="{ error: 'mt-0 px-4 pb-3' }">
+          <label class="flex min-h-12 items-start gap-3 px-4 py-3">
+            <UIcon
+              name="i-lucide-pen-line"
+              class="mt-0.5 size-5 shrink-0"
+              :class="noteFocused ? 'text-primary' : 'text-dimmed'"
+            />
+            <!-- Grows to 3 lines, then scrolls; Enter closes the keyboard instead of adding a line break -->
+            <UTextarea
+              ref="noteInput"
+              v-model="note"
+              variant="none"
+              :rows="1"
+              autoresize
+              :maxrows="3"
+              placeholder="Add a note"
+              :maxlength="100"
+              autocomplete="off"
+              enterkeyhint="done"
+              aria-label="Note"
+              class="min-w-0 flex-1"
+              :ui="{ base: 'resize-none p-0 text-base leading-6 ring-0' }"
+              @focus="onNoteFocus"
+              @blur="onNoteBlur"
+              @keydown.enter.prevent="closeKeyboard"
+            />
+            <!-- mousedown.prevent keeps the keyboard open while clearing -->
+            <button
+              v-if="note"
+              type="button"
+              aria-label="Clear note"
+              class="-my-2.5 -mr-2.5 flex size-11 shrink-0 items-center justify-center rounded-full text-dimmed transition-colors hover:text-toned"
+              @mousedown.prevent
+              @click="note = ''"
+            >
+              <UIcon name="i-lucide-circle-x" class="size-5" />
+            </button>
+          </label>
+        </UFormField>
       </div>
-      <p v-if="errors.note" class="mt-2 px-1 text-sm text-error">
-        {{ errors.note[0] }}
-      </p>
-    </form>
+    </UForm>
 
     <!-- Docked keypad with Save right above it. The side button slides the keypad down / back up;
          while typing a note only Save stays, above the keyboard. -->
@@ -537,7 +399,7 @@ const chip = (active: boolean) =>
           :label="editId ? 'Save changes' : type === 'income' ? 'Add income' : 'Add expense'"
           size="xl"
           block
-          :loading="saving"
+          :loading="form?.loading"
           class="h-13 flex-1 justify-center"
         />
         <UButton
@@ -585,33 +447,6 @@ const chip = (active: boolean) =>
       :selected-id="accountId"
       @select="pickWallet"
     />
-
-    <UModal v-model:open="calendarOpen" title="Pick a date">
-      <template #body>
-        <UCalendar
-          :model-value="pickedDay"
-          :is-date-disabled="isFutureDay"
-          class="mx-auto"
-          @update:model-value="onPickDay"
-        />
-      </template>
-    </UModal>
   </div>
 </template>
 
-<style scoped>
-/* Blinking caret: the amount is the field being typed into */
-.caret {
-  animation: blink 1s steps(1) infinite;
-}
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .caret {
-    animation: none;
-  }
-}
-</style>

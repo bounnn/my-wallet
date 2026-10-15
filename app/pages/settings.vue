@@ -1,5 +1,7 @@
 <script setup lang="ts">
 // Settings: wallets, categories, backup / restore, and erasing everything. All data is on this device only.
+useHead({ title: "Settings" });
+
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);

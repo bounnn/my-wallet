@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { CalendarDate } from "@internationalized/date";
 
+useHead({ title: "Report" });
+
 // Report (ui/ref1, middle screen): the picked wallet's expenses or income for the month by category as a donut,
 // or the last 6 months as bars, with a per-category list compared to last month
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
@@ -170,7 +172,7 @@ function change(c: { total: number; last: number }) {
           v-if="view === 'donut'"
           v-model:selected="selectedCategory"
           :segments="segments"
-          :aria-label="`${typeName} by category`"
+          :label="`${typeName} by category`"
           class="mt-4"
         >
           <template v-if="selected">
@@ -198,7 +200,7 @@ function change(c: { total: number; last: number }) {
           :currency="currency"
           :color="type === 'expense' ? 'error' : 'success'"
           :up-is-good="type === 'income'"
-          :aria-label="`${typeName} over the last 6 months`"
+          :label="`${typeName} over the last 6 months`"
           class="mt-4"
         />
       </section>

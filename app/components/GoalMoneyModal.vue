@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { FormSubmitEvent } from "@nuxt/ui";
+import * as v from "valibot";
+
 // Put money into a goal, or take some out, typed on the in-app keypad. Either way it's a real
 // transaction in the goal's category: adding is an expense from the goal's wallet, taking out an income back to it.
 const props = defineProps<{ goal?: Goal; category?: Category; saved: number; mode: "add" | "take" }>();
@@ -11,55 +14,49 @@ const wallet = computed(() => wallets.value?.find((w) => w.id === props.goal?.ac
 
 const currency = computed(() => props.goal?.currency ?? "USD");
 
-const amountText = ref("");
-const error = ref<string>();
+// Typed on the keypad, which isn't a form input, so typing clears the error by hand
+const state = reactive({ amount: "" });
+const form = useTemplateRef("form");
+watch(() => state.amount, () => form.value?.clear());
 // Set once this payment reaches the target; the body then shows the celebration
 const celebration = ref<{ name: string; target: number }>();
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  amountText.value = "";
-  error.value = undefined;
+  state.amount = "";
   celebration.value = undefined;
 });
-watch(amountText, () => (error.value = undefined));
 
-const amount = computed(() => {
-  const n = Number.parseFloat(amountText.value);
-  return Number.isFinite(n) ? toMinor(n, currency.value) : 0;
-});
 const left = computed(() => (props.goal ? Math.max(props.goal.target - props.saved, 0) : 0));
 
-const saving = ref(false);
+const schema = v.object({
+  amount: v.pipe(
+    v.string(),
+    v.check(() => !!wallet.value, "This goal's wallet was deleted"),
+    v.transform((text) => parseAmount(text, currency.value)),
+    v.check((n) => Number.isFinite(n) && n > 0, "Enter an amount above 0"),
+    v.check(
+      (n) => props.mode === "add" || n <= props.saved,
+      () => `Only ${formatMoney(props.saved, currency.value)} saved`,
+    ),
+  ),
+});
+
 const toast = useToast();
 
-async function save() {
+async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
   const goal = props.goal;
-  if (!goal) return;
-  if (!wallet.value) {
-    error.value = "This goal's wallet was deleted";
-    return;
-  }
-  if (amount.value <= 0) {
-    error.value = "Enter an amount above 0";
-    return;
-  }
-  if (props.mode === "take" && amount.value > props.saved) {
-    error.value = `Only ${formatMoney(props.saved, currency.value)} saved`;
-    return;
-  }
+  if (!goal || !wallet.value) return;
+  const amount = data.amount;
 
-  saving.value = true;
   try {
-    const now = new Date();
-    await db.transactions.add({
+    await saveTransaction({
       accountId: wallet.value.id,
       categoryId: goal.categoryId,
       type: props.mode === "add" ? "expense" : "income",
-      amount: amount.value,
-      date: now,
-      createdAt: now,
+      amount,
+      date: new Date(),
     });
-    const reached = props.mode === "add" && props.saved < goal.target && props.saved + amount.value >= goal.target;
+    const reached = props.mode === "add" && props.saved < goal.target && props.saved + amount >= goal.target;
     // Reaching a goal is the big moment: the modal turns into a celebration instead of closing with a toast
     if (reached) {
       celebration.value = { name: props.category?.name ?? "your goal", target: goal.target };
@@ -67,7 +64,7 @@ async function save() {
     }
     toast.add({
       title: props.mode === "add" ? "Money added" : "Money taken out",
-      description: `${formatMoney(amount.value, currency.value)} ${props.mode === "add" ? "from" : "to"} ${wallet.value.name}`,
+      description: `${formatMoney(amount, currency.value)} ${props.mode === "add" ? "from" : "to"} ${wallet.value.name}`,
       color: "success",
       icon: "i-lucide-circle-check",
     });
@@ -79,8 +76,6 @@ async function save() {
       color: "error",
       icon: "i-lucide-circle-alert",
     });
-  } finally {
-    saving.value = false;
   }
 }
 </script>
@@ -106,7 +101,7 @@ async function save() {
         <UButton label="Done" size="xl" block class="mt-8 h-13 justify-center" @click="open = false" />
       </div>
 
-      <div v-else-if="goal">
+      <UForm v-else-if="goal" ref="form" :schema="schema" :state="state" @submit="save">
         <div class="flex items-center gap-3">
           <IconTile :icon="category?.icon ?? 'i-lucide-piggy-bank'" :color="category?.color" size="sm" />
           <div class="min-w-0 flex-1">
@@ -115,40 +110,40 @@ async function save() {
           </div>
         </div>
 
-        <div class="mt-5 divide-y divide-default rounded-2xl bg-elevated">
-          <div class="px-4 pt-3 pb-4">
+        <UFormField name="amount" :ui="{ error: 'sr-only' }" class="mt-5 rounded-2xl bg-elevated px-4 pt-3 pb-4">
+          <template #default="{ error }">
             <div class="flex items-center justify-between">
-              <span class="text-sm" :class="error ? 'text-error' : 'text-muted'">{{ error ?? "Amount" }}</span>
+              <span class="text-sm" :class="error ? 'text-error' : 'text-muted'">{{ error || "Amount" }}</span>
               <!-- Quick fill: what's left to reach the target, or everything saved -->
               <button
                 v-if="mode === 'add' ? left > 0 : saved > 0"
                 type="button"
                 class="-my-2 h-10 rounded-full bg-primary/20 px-3.5 text-sm font-medium text-navy-100 transition-colors hover:bg-primary/25"
-                @click="amountText = String(fromMinor(mode === 'add' ? left : saved, currency))"
+                @click="state.amount = String(fromMinor(mode === 'add' ? left : saved, currency))"
               >
                 {{ mode === "add" ? "Fill the rest" : "Take all" }}
               </button>
             </div>
             <p class="mt-1 flex items-baseline gap-1.5 font-display font-bold tracking-tight tabular-nums" aria-live="polite">
               <span class="text-2xl text-dimmed">{{ currencySymbol(currency) }}</span>
-              <span class="truncate text-4xl" :class="amountText ? 'text-highlighted' : 'text-dimmed'">
-                {{ formatAmountInput(amountText) }}
+              <span class="truncate text-4xl" :class="state.amount ? 'text-highlighted' : 'text-dimmed'">
+                {{ formatAmountInput(state.amount) }}
               </span>
             </p>
-          </div>
-        </div>
+          </template>
+        </UFormField>
 
-        <AmountKeypad v-model="amountText" :decimals="currencyDigits(currency)" class="mt-3" />
+        <AmountKeypad v-model="state.amount" :decimals="currencyDigits(currency)" class="mt-3" />
 
         <UButton
+          type="submit"
           :label="mode === 'add' ? 'Add to goal' : 'Take out'"
           size="xl"
           block
-          :loading="saving"
+          loading-auto
           class="mt-3 h-13 justify-center"
-          @click="save"
         />
-      </div>
+      </UForm>
     </template>
   </UModal>
 </template>

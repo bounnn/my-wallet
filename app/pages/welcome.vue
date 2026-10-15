@@ -1,28 +1,38 @@
 <script setup lang="ts">
+import type { FormSubmitEvent } from "@nuxt/ui";
 import * as v from "valibot";
 
 definePageMeta({ layout: false });
+useHead({ title: "Welcome" });
 
 // intro → 3 setup steps → done
 const screens = ["intro", "name", "currency", "balance", "done"] as const;
 const setupSteps = 3;
 const screen = ref(0);
-const current = computed(() => screens[screen.value]);
+const current = computed(() => screens[screen.value] ?? "intro");
 const direction = ref<"forward" | "back">("forward");
 
 const name = ref("");
 const currency = ref(localCurrency());
 const amountText = ref("");
 
-// --- Name ---
-const nameSchema = v.pipe(
-  v.string(),
-  v.trim(),
-  v.minLength(1, "Give your wallet a name"),
-  v.maxLength(50, "Keep it under 50 characters"),
-);
-const nameError = ref<string>();
+// --- Name: the one typed field, checked from its step on (the intro has nothing to check) ---
+const state = reactive({ name });
+const schema = v.object({
+  name: v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1, "Give your wallet a name"),
+    v.maxLength(50, "Keep it under 50 characters"),
+  ),
+});
 const nameSuggestions = ["Main Wallet", "Cash", "Bank account", "Savings"];
+// A suggestion isn't typed, so it clears the error by hand
+const form = useTemplateRef("form");
+function pickName(suggestion: string) {
+  name.value = suggestion;
+  form.value?.clear("name");
+}
 
 // --- Currency: search by code or name, selected one pinned on top ---
 const currencies = currencyOptions();
@@ -46,7 +56,6 @@ const amountDisplay = computed(() => formatAmountInput(amountText.value));
 watch(currency, () => (amountText.value = ""));
 
 // --- Navigation ---
-const saving = ref(false);
 const toast = useToast();
 
 function go(to: number) {
@@ -54,13 +63,9 @@ function go(to: number) {
   screen.value = to;
 }
 
-async function next() {
-  if (current.value === "name") {
-    const result = v.safeParse(nameSchema, name.value);
-    nameError.value = result.success ? undefined : result.issues[0].message;
-    if (!result.success) return;
-    name.value = result.output;
-  }
+// Each step's button submits the form, which checks the name first
+async function next({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
+  if (current.value === "name") name.value = data.name;
   if (current.value === "balance") {
     if (await create()) go(screen.value + 1);
     return;
@@ -73,14 +78,8 @@ async function next() {
 }
 
 async function create() {
-  saving.value = true;
   try {
-    await db.accounts.add({
-      name: name.value,
-      currency: currency.value,
-      initialBalance: balance.value,
-      createdAt: new Date(),
-    });
+    await addWallet({ name: name.value, currency: currency.value, initialBalance: balance.value });
     return true;
   } catch (error) {
     toast.add({
@@ -90,8 +89,6 @@ async function create() {
       icon: "i-lucide-circle-alert",
     });
     return false;
-  } finally {
-    saving.value = false;
   }
 }
 
@@ -143,7 +140,13 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
       <span class="w-9 text-right text-sm tabular-nums text-dimmed">{{ screen }}/{{ setupSteps }}</span>
     </div>
 
-    <form class="relative flex min-h-0 flex-1 flex-col" @submit.prevent="next">
+    <UForm
+      ref="form"
+      :schema="current === 'intro' ? undefined : schema"
+      :state="state"
+      class="relative flex min-h-0 flex-1 flex-col"
+      @submit="next"
+    >
       <Transition :name="transition" mode="out-in" appear @after-enter="focusStep">
         <!-- Intro: one slide, card as the hero visual -->
         <section v-if="current === 'intro'" key="intro" class="flex flex-1 flex-col px-6">
@@ -185,20 +188,22 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
           </h1>
           <p class="mt-2 text-muted">You can add more wallets later for cards, savings or cash.</p>
 
-          <input
-            v-model="name"
-            type="text"
-            placeholder="e.g. Main Wallet"
-            maxlength="50"
-            data-autofocus
-            autocomplete="off"
-            enterkeyhint="next"
-            aria-label="Wallet name"
-            :aria-invalid="!!nameError"
-            class="mt-10 w-full border-b border-accented bg-transparent pb-3 font-display text-2xl font-semibold text-highlighted outline-none transition-colors placeholder:font-normal placeholder:text-dimmed focus:border-primary"
-            @input="nameError = undefined"
-          />
-          <p v-if="nameError" class="mt-2 text-sm text-error">{{ nameError }}</p>
+          <UFormField name="name" class="mt-10">
+            <UInput
+              v-model="name"
+              variant="none"
+              placeholder="e.g. Main Wallet"
+              :maxlength="50"
+              data-autofocus
+              autocomplete="off"
+              enterkeyhint="next"
+              aria-label="Wallet name"
+              class="w-full"
+              :ui="{
+                base: 'rounded-none border-b border-accented p-0 pb-3 font-display text-2xl! font-semibold ring-0 transition-colors placeholder:font-normal focus:border-primary',
+              }"
+            />
+          </UFormField>
 
           <div class="mt-6 flex flex-wrap gap-2">
             <UButton
@@ -208,7 +213,7 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
               color="neutral"
               variant="subtle"
               class="h-11 px-4"
-              @click="(name = suggestion), (nameError = undefined)"
+              @click="pickName(suggestion)"
             />
           </div>
         </section>
@@ -304,9 +309,9 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
 
       <!-- Primary action pinned within thumb reach -->
       <div class="px-6 pt-3 pb-[max(env(safe-area-inset-bottom),1rem)]">
-        <UButton type="submit" :label="buttonLabel" size="xl" block :loading="saving" class="h-14 justify-center" />
+        <UButton type="submit" :label="buttonLabel" size="xl" block loading-auto class="h-14 justify-center" />
       </div>
-    </form>
+    </UForm>
   </div>
 </template>
 

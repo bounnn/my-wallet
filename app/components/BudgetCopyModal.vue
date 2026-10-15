@@ -6,7 +6,11 @@ const currency = computed(() => props.wallet.currency);
 const open = defineModel<boolean>("open", { required: true });
 
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
-const { value: monthBudgets } = useLiveQuery(() => db.budgets.where("month").equals(props.month).toArray(), []);
+const { value: monthBudgets } = useLiveQuery(
+  () => db.budgets.where("month").equals(props.month).toArray(),
+  [],
+  () => props.month,
+);
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
 
 const rows = computed(() => {
@@ -33,22 +37,14 @@ const saving = ref(false);
 const toast = useToast();
 
 async function copy() {
-  const now = new Date();
   const copies = rows.value
     .filter((r) => picked.value.includes(r.budget.id))
-    .map((r) => ({
-      accountId: props.wallet.id,
-      month: props.month,
-      name: r.budget.name,
-      categoryIds: r.categoryIds,
-      amount: r.budget.amount,
-      createdAt: now,
-    }));
+    .map((r) => ({ name: r.budget.name, categoryIds: r.categoryIds, amount: r.budget.amount }));
   if (!copies.length) return;
 
   saving.value = true;
   try {
-    await db.budgets.bulkAdd(copies);
+    await copyBudgets(props.wallet.id, props.month, copies);
     open.value = false;
   } catch (error) {
     toast.add({

@@ -1,15 +1,17 @@
 import { liveQuery } from "dexie";
+import type { WatchSource } from "vue";
 
 /**
  * Reactive Dexie query: re-runs whenever the queried tables change.
- * Don't read props or refs inside `querier`: Dexie may run it outside Vue's tracking, so it won't re-run when
- * they change. Query the whole table and filter in a computed instead (see GoalMoneyModal's wallet).
+ * A query that reads props or refs lists them in `deps`, so it also re-runs when they change
+ * (Dexie runs `querier` outside Vue's tracking, so reading them inside isn't enough):
+ *   useLiveQuery(() => db.budgets.where("month").equals(props.month).toArray(), [], () => props.month)
  */
-export function useLiveQuery<T>(querier: () => T | Promise<T>, initialValue?: T) {
+export function useLiveQuery<T>(querier: () => T | Promise<T>, initialValue?: T, deps?: WatchSource) {
   const value = shallowRef<T | undefined>(initialValue);
   const error = shallowRef<unknown>();
 
-  watchEffect((onCleanup) => {
+  function subscribe() {
     const subscription = liveQuery(querier).subscribe({
       next: (result) => {
         value.value = result;
@@ -19,8 +21,11 @@ export function useLiveQuery<T>(querier: () => T | Promise<T>, initialValue?: T)
         error.value = err;
       },
     });
-    onCleanup(() => subscription.unsubscribe());
-  });
+    return () => subscription.unsubscribe();
+  }
+
+  if (deps) watch(deps, (_value, _old, onCleanup) => onCleanup(subscribe()), { immediate: true });
+  else onScopeDispose(subscribe());
 
   return { value, error };
 }

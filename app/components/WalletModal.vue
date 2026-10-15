@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { FormSubmitEvent } from "@nuxt/ui";
 import * as v from "valibot";
 
 // Create a wallet, or edit / delete one when `wallet` is given: name, currency, starting balance.
@@ -6,36 +7,25 @@ import * as v from "valibot";
 const props = defineProps<{ wallet?: Account; canDelete?: boolean }>();
 const open = defineModel<boolean>("open", { required: true });
 
-const { value: counts } = useLiveQuery(
-  async () => {
-    const id = props.wallet?.id;
-    if (id === undefined) return { transactions: 0, goals: 0, budgets: 0 };
-    const [transactions, goals, budgets] = await Promise.all([
-      db.transactions.where("accountId").equals(id).count(),
-      db.goals.where("accountId").equals(id).count(),
-      db.budgets.where("accountId").equals(id).count(),
-    ]);
-    return { transactions, goals, budgets };
-  },
-  { transactions: 0, goals: 0, budgets: 0 },
+const noUsage = { transactions: 0, goals: 0, budgets: 0 };
+const { value: usage } = useLiveQuery(
+  () => (props.wallet ? walletUsage(props.wallet.id) : noUsage),
+  noUsage,
+  () => props.wallet?.id,
 );
-const currencyLocked = computed(() => Object.values(counts.value ?? {}).some((n) => n > 0));
+const currencyLocked = computed(() => Object.values(usage.value ?? noUsage).some((n) => n > 0));
 
 const currencyItems = currencyOptions().map((c) => ({ label: c.code, value: c.code, description: c.name }));
 
-const name = ref("");
-const currency = ref("USD");
-const balanceText = ref("");
-const errors = ref<{ name?: string; balance?: string }>({});
+const state = reactive({ name: "", currency: "USD", balance: "" });
 
 // Fill the form each time it opens: the wallet's values, or a blank one in the main wallet's currency
 watch(open, async (isOpen) => {
   if (!isOpen) return;
   const w = props.wallet;
-  name.value = w?.name ?? "";
-  currency.value = w?.currency ?? (await db.accounts.orderBy("id").first())?.currency ?? "USD";
-  balanceText.value = w?.initialBalance ? formatAmount(w.initialBalance, w.currency) : "";
-  errors.value = {};
+  state.name = w?.name ?? "";
+  state.currency = w?.currency ?? (await mainCurrency()) ?? "USD";
+  state.balance = w?.initialBalance ? formatAmount(w.initialBalance, w.currency) : "";
 });
 
 const schema = v.object({
@@ -45,29 +35,22 @@ const schema = v.object({
     v.minLength(1, "Give the wallet a name"),
     v.maxLength(50, "Keep it under 50 characters"),
   ),
+  currency: v.string(),
   // Empty means a zero starting balance
-  balance: v.pipe(v.number(), v.check(Number.isFinite, "Enter a number")),
+  balance: v.pipe(
+    v.string(),
+    v.transform((text) => (text.trim() ? parseAmount(text, state.currency) : 0)),
+    v.check((n: number) => Number.isFinite(n), "Enter a number"),
+  ),
 });
 
-const saving = ref(false);
 const toast = useToast();
 
-async function save() {
-  const result = v.safeParse(schema, {
-    name: name.value,
-    balance: balanceText.value.trim() ? parseAmount(balanceText.value, currency.value) : 0,
-  });
-  if (!result.success) {
-    const nested = v.flatten<typeof schema>(result.issues).nested ?? {};
-    errors.value = { name: nested.name?.[0], balance: nested.balance?.[0] };
-    return;
-  }
-
-  const fields = { name: result.output.name, currency: currency.value, initialBalance: result.output.balance };
-  saving.value = true;
+async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
+  const fields = { name: data.name, currency: data.currency, initialBalance: data.balance };
   try {
-    if (props.wallet) await db.accounts.update(props.wallet.id, fields);
-    else await db.accounts.add({ ...fields, createdAt: new Date() });
+    if (props.wallet) await updateWallet(props.wallet.id, fields);
+    else await addWallet(fields);
     open.value = false;
   } catch (error) {
     toast.add({
@@ -76,8 +59,6 @@ async function save() {
       color: "error",
       icon: "i-lucide-circle-alert",
     });
-  } finally {
-    saving.value = false;
   }
 }
 
@@ -86,11 +67,11 @@ const confirmOpen = ref(false);
 const deleting = ref(false);
 const plural = (n: number, word: string) => `${n} ${n === 1 ? word : `${word}s`}`;
 const deleteDescription = computed(() => {
-  const c = counts.value ?? { transactions: 0, goals: 0, budgets: 0 };
+  const u = usage.value ?? noUsage;
   const parts = [
-    c.transactions && plural(c.transactions, "transaction"),
-    c.goals && plural(c.goals, "goal"),
-    c.budgets && plural(c.budgets, "budget"),
+    u.transactions && plural(u.transactions, "transaction"),
+    u.goals && plural(u.goals, "goal"),
+    u.budgets && plural(u.budgets, "budget"),
   ].filter(Boolean);
   return parts.length
     ? `${props.wallet?.name} and its ${parts.join(", ")} will be gone for good.`
@@ -102,18 +83,17 @@ async function remove() {
   if (!wallet) return;
   deleting.value = true;
   try {
-    await db.transaction("rw", [db.accounts, db.transactions, db.goals, db.budgets, db.categories], async () => {
-      // Goals' categories are archived like a deleted goal's, so nothing else loses a name
-      const goals = await db.goals.where("accountId").equals(wallet.id).toArray();
-      await db.categories.bulkUpdate(goals.map((g) => ({ key: g.categoryId, changes: { archived: true } })));
-      await db.goals.bulkDelete(goals.map((g) => g.id));
-      await db.budgets.where("accountId").equals(wallet.id).delete();
-      await db.transactions.where("accountId").equals(wallet.id).delete();
-      await db.accounts.delete(wallet.id);
-    });
+    await deleteWallet(wallet.id);
     confirmOpen.value = false;
     open.value = false;
     toast.add({ title: "Wallet deleted", description: wallet.name, icon: "i-lucide-trash-2" });
+  } catch (error) {
+    toast.add({
+      title: "Couldn't delete the wallet",
+      description: errorText(error),
+      color: "error",
+      icon: "i-lucide-circle-alert",
+    });
   } finally {
     deleting.value = false;
   }
@@ -123,26 +103,17 @@ async function remove() {
 <template>
   <UModal v-model:open="open" :title="wallet ? 'Edit wallet' : 'New wallet'">
     <template #body>
-      <form class="space-y-5" @submit.prevent="save">
+      <UForm :schema="schema" :state="state" class="space-y-5" @submit="save">
         <!-- Grouped card like the add screen: name, currency, then the starting balance -->
         <div class="divide-y divide-default rounded-2xl bg-elevated">
-          <label class="flex min-h-12 items-center gap-3 px-4 py-3">
-            <UIcon name="i-lucide-wallet" class="size-5 shrink-0 text-dimmed" />
-            <span class="min-w-0 flex-1">
-              <span class="block text-xs" :class="errors.name ? 'text-error' : 'text-muted'">{{ errors.name ?? "Name" }}</span>
-              <input
-                v-model="name"
-                placeholder="e.g. Savings"
-                maxlength="50"
-                autocomplete="off"
-                enterkeyhint="done"
-                aria-label="Wallet name"
-                :aria-invalid="!!errors.name"
-                class="w-full truncate bg-transparent font-medium text-highlighted caret-primary outline-none placeholder:text-dimmed"
-                @input="errors.name = undefined"
-              />
-            </span>
-          </label>
+          <FieldRow
+            v-model="state.name"
+            name="name"
+            label="Name"
+            icon="i-lucide-wallet"
+            placeholder="e.g. Savings"
+            :maxlength="50"
+          />
 
           <div class="flex min-h-12 items-center gap-3 px-4 py-2">
             <UIcon name="i-lucide-coins" class="size-5 shrink-0 text-dimmed" />
@@ -150,10 +121,10 @@ async function remove() {
             <span
               v-if="currencyLocked"
               class="rounded-md bg-accented px-1.5 py-0.5 text-xs font-medium text-toned"
-            >{{ currency }}</span>
+            >{{ state.currency }}</span>
             <USelectMenu
               v-else
-              v-model="currency"
+              v-model="state.currency"
               :items="currencyItems"
               value-key="value"
               :filter-fields="['label', 'description']"
@@ -164,13 +135,7 @@ async function remove() {
             />
           </div>
 
-          <AmountField
-            v-model="balanceText"
-            label="Starting balance"
-            :currency="currency"
-            :error="errors.balance"
-            @update:model-value="errors.balance = undefined"
-          />
+          <AmountField v-model="state.balance" name="balance" label="Starting balance" :currency="state.currency" />
         </div>
         <p v-if="currencyLocked" class="-mt-2 text-sm text-muted">
           The currency can't change once a wallet has transactions, goals or budgets.
@@ -192,11 +157,11 @@ async function remove() {
             :label="wallet ? 'Save wallet' : 'Add wallet'"
             size="xl"
             block
-            :loading="saving"
+            loading-auto
             class="h-13 flex-1 justify-center"
           />
         </div>
-      </form>
+      </UForm>
     </template>
   </UModal>
 

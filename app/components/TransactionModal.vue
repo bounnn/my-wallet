@@ -28,27 +28,24 @@ function edit() {
 async function remove() {
   const transaction = props.transaction;
   if (!transaction) return;
-  // Money added to a goal can't be removed once it's been taken out again: saved would go below 0
-  const goal = await db.goals.where("categoryId").equals(transaction.categoryId).first();
-  if (goal && transaction.type === "expense") {
-    const saved = await loadGoalSaved(goal, transaction.id);
-    if (saved < 0) {
-      toast.add({
-        title: "Can't delete this",
-        description: `${formatMoney(-saved, goal.currency)} of it was already taken out of the goal`,
-        color: "error",
-        icon: "i-lucide-circle-alert",
-      });
-      return;
-    }
+  // Money added to a goal can't be removed once it's been taken out again (deleteTransaction says so)
+  try {
+    await deleteTransaction(transaction);
+  } catch (error) {
+    toast.add({
+      title: "Can't delete this",
+      description: errorText(error),
+      color: "error",
+      icon: "i-lucide-circle-alert",
+    });
+    return;
   }
-  await db.transactions.delete(transaction.id);
   open.value = false;
   toast.add({
     title: transaction.type === "income" ? "Income deleted" : "Expense deleted",
     description: formatMoney(transaction.amount, currency.value),
     icon: "i-lucide-trash-2",
-    actions: [{ label: "Undo", color: "neutral", variant: "soft", onClick: () => void db.transactions.add(transaction) }],
+    actions: [{ label: "Undo", color: "neutral", variant: "soft", onClick: () => void restoreTransaction(transaction) }],
   });
 }
 </script>

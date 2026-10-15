@@ -13,7 +13,7 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      htmlAttrs: { class: "dark" },
+      htmlAttrs: { lang: "en", class: "dark" },
       meta: [
         { name: "theme-color", content: "#060b1a" },
         { name: "color-scheme", content: "dark" },
