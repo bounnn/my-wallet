@@ -211,8 +211,8 @@ watch(pickedMonth, () => (openWeek.value = undefined));
           <MoneyAmount
             :amount="c.total"
             :currency="currency"
+            hide-currency
             class="mt-5"
-            currency-class="text-sm text-muted"
             :amount-class="['text-2xl font-bold tracking-tight', c.type === 'income' ? 'text-success' : 'text-highlighted'].join(' ')"
           />
           <p class="mt-1 text-xs text-dimmed">
@@ -252,6 +252,7 @@ watch(pickedMonth, () => (openWeek.value = undefined));
           sublabel="Today & yesterday"
           :days="recentDays"
           :currency="currency"
+          hide-currency
           :category-by-id="categoryById"
           :wallet-by-id="walletById"
         />
@@ -267,6 +268,7 @@ watch(pickedMonth, () => (openWeek.value = undefined));
           :sublabel="week.range"
           :days="week.days"
           :currency="currency"
+          hide-currency
           :category-by-id="categoryById"
           :wallet-by-id="walletById"
           @update:open="openWeek = $event ? week.key : null"

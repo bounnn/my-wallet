@@ -8,12 +8,14 @@ const props = defineProps<{
   currency: string;
   categoryById: Map<number, Category>;
   walletById: Map<number, Account>;
+  // Skip the code on the header and rows when the screen already shows the currency
+  hideCurrency?: boolean;
 }>();
 const open = defineModel<boolean>("open", { default: false });
 
 const total = computed(() => props.days.reduce((s, d) => s + d.total, 0));
 const count = computed(() => props.days.reduce((s, d) => s + d.items.length, 0));
-// Day subtotals skip the currency: the group header right above shows it
+// Day subtotals skip the currency: the group header right above (or the screen) shows it
 const formatSigned = (minor: number) => `${minor > 0 ? "+" : ""}${formatAmount(minor, props.currency)}`;
 </script>
 
@@ -34,6 +36,7 @@ const formatSigned = (minor: number) => `${minor > 0 ? "+" : ""}${formatAmount(m
         :amount="total"
         :currency="currency"
         signed
+        :hide-currency="hideCurrency"
         align="end"
         class="shrink-0"
         currency-class="text-[0.6875rem] text-dimmed"
@@ -66,6 +69,7 @@ const formatSigned = (minor: number) => `${minor > 0 ? "+" : ""}${formatAmount(m
             :transaction="t"
             :category="categoryById.get(t.categoryId)"
             :wallet="walletById.get(t.accountId)"
+            :hide-currency="hideCurrency"
           />
         </ul>
       </div>

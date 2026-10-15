@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One transaction line: category tile, category name, note (or wallet when there is none), signed amount
-const props = defineProps<{ transaction: Transaction; category?: Category; wallet?: Account }>();
+const props = defineProps<{ transaction: Transaction; category?: Category; wallet?: Account; hideCurrency?: boolean }>();
 
 const signed = computed(() =>
   props.transaction.type === "income" ? props.transaction.amount : -props.transaction.amount,
@@ -21,6 +21,7 @@ const currency = computed(() => props.wallet?.currency ?? "USD");
       :amount="signed"
       :currency="currency"
       signed
+      :hide-currency="hideCurrency"
       align="end"
       class="shrink-0"
       :amount-class="['font-semibold', transaction.type === 'income' ? 'text-success' : 'text-highlighted'].join(' ')"

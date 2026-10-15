@@ -17,7 +17,7 @@ withDefaults(defineProps<{ name: string; currency: string; balance: number; labe
       </div>
 
       <div class="mt-auto">
-        <!-- Currency sits in the muted line above the number, like every amount in the app -->
+        <!-- Currency sits in the muted line above the number; on home it's the only place it's shown -->
         <p class="flex items-center gap-2 text-sm text-white/70">
           {{ label }}
           <span class="rounded-md bg-white/12 px-1.5 py-0.5 text-xs font-medium text-white/80">{{ currency }}</span>

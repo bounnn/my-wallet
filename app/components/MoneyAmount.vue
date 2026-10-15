@@ -6,6 +6,8 @@ const props = withDefaults(
     currency: string;
     // Show "+" for positive amounts (negatives always get "-")
     signed?: boolean;
+    // Drop the code line when the screen already shows the currency once (e.g. the home card)
+    hideCurrency?: boolean;
     align?: "start" | "end";
     amountClass?: string;
     currencyClass?: string;
@@ -18,7 +20,7 @@ const text = computed(() => `${props.signed && props.amount > 0 ? "+" : ""}${for
 
 <template>
   <span class="flex min-w-0 flex-col" :class="align === 'end' ? 'items-end text-right' : 'items-start'">
-    <span class="font-medium" :class="currencyClass">{{ currency }}</span>
+    <span v-if="!hideCurrency" class="font-medium" :class="currencyClass">{{ currency }}</span>
     <span class="max-w-full truncate font-display tabular-nums" :class="amountClass">{{ text }}</span>
   </span>
 </template>
