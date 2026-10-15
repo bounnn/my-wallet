@@ -157,7 +157,7 @@ function showDetails(t: Transaction) {
     <WalletCard :name="cardName" :currency="currency" :balance="balance" label="Total balance" class="mt-4">
       <div class="mt-4 grid grid-cols-2 gap-3 border-t border-white/15 pt-3">
         <div class="flex min-w-0 items-center gap-2.5">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/12">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/12">
             <UIcon name="i-lucide-arrow-down-left" class="size-4 text-emerald-300" />
           </span>
           <div class="min-w-0">
@@ -168,7 +168,7 @@ function showDetails(t: Transaction) {
           </div>
         </div>
         <div class="flex min-w-0 items-center gap-2.5">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/12">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/12">
             <UIcon name="i-lucide-arrow-up-right" class="size-4 text-rose-300" />
           </span>
           <div class="min-w-0">

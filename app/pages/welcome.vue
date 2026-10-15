@@ -240,7 +240,7 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
                 @click="currency = c.code"
               >
                 <span
-                  class="flex size-10 shrink-0 items-center justify-center rounded-full bg-elevated font-display text-sm font-semibold text-highlighted"
+                  class="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-elevated font-display text-sm font-semibold text-highlighted"
                 >
                   {{ c.symbol.length <= 2 ? c.symbol : c.code.slice(0, 1) }}
                 </span>

@@ -2,7 +2,7 @@
 import { CalendarDate } from "@internationalized/date";
 
 // My Plan (ui/ref1, right screen): savings goals with progress against their due date,
-// then the picked month's budgets as rings (each month starts empty; earlier budgets can be copied in)
+// then the picked month's budgets as bars (each month starts empty; earlier budgets can be copied in)
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
@@ -215,7 +215,7 @@ const budgetCards = computed(() =>
         budget: b,
         tiles,
         name: b.name || tiles.map((t) => t.name).join(", "),
-        // The ring follows the first category's color
+        // The bar follows the first category's color
         color: tiles[0]?.color ?? "primary",
         spent,
         used,
@@ -228,8 +228,8 @@ const budgetCards = computed(() =>
 const budgetTotal = computed(() => budgetCards.value.reduce((s, b) => s + b.budget.amount, 0));
 const budgetSpent = computed(() => budgetCards.value.reduce((s, b) => s + b.spent, 0));
 
-// Ring in the category color until the limit is nearly reached
-const ringColor = (b: { used: number; color: CategoryColor }): CategoryColor =>
+// Bar in the category color until the limit is nearly reached
+const budgetColor = (b: { used: number; color: CategoryColor }): CategoryColor =>
   b.used > 1 ? "error" : b.used >= 0.9 ? "warning" : b.color;
 
 const budgetModalOpen = ref(false);
@@ -422,32 +422,64 @@ const copyModalOpen = ref(false);
             <li v-for="b in budgetCards" :key="b.budget.id">
               <button
                 type="button"
-                class="surface-card flex w-full items-center gap-3 rounded-2xl p-4 text-left transition-transform active:scale-[0.99] motion-reduce:active:scale-100"
+                class="surface-card w-full rounded-2xl p-4 text-left transition-transform active:scale-[0.99] motion-reduce:active:scale-100"
                 :aria-label="`Edit ${b.name} budget`"
                 @click="openBudget(b.budget)"
               >
-                <!-- Full-size first category's tile; several categories add a "+N" badge on its corner
-                     (the name already lists them all) -->
-                <div class="relative shrink-0">
-                  <IconTile :icon="b.tiles[0]?.icon ?? 'i-lucide-tag'" :color="b.tiles[0]?.color" />
+                <div class="flex items-center gap-3">
+                  <!-- First category's tile; several categories add a "+N" badge on its corner
+                       (the name already lists them all) -->
+                  <div class="relative shrink-0">
+                    <IconTile :icon="b.tiles[0]?.icon ?? 'i-lucide-tag'" :color="b.tiles[0]?.color" size="sm" />
+                    <span
+                      v-if="b.tiles.length > 1"
+                      class="absolute -right-1.5 -bottom-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-accented px-1 text-[11px] font-semibold text-highlighted tabular-nums ring-2 ring-[#161b28]"
+                      :aria-label="`${b.tiles.length} categories`"
+                    >+{{ b.tiles.length - 1 }}</span>
+                  </div>
+                  <p class="min-w-0 flex-1 truncate font-display font-bold tracking-tight text-highlighted">{{ b.name }}</p>
+                </div>
+
+                <!-- What's left is the number that matters; wraps instead of cutting long amounts -->
+                <p class="mt-4 flex flex-wrap items-baseline gap-x-2">
                   <span
-                    v-if="b.tiles.length > 1"
-                    class="absolute -right-1.5 -bottom-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-accented px-1 text-[11px] font-semibold text-highlighted tabular-nums ring-2 ring-[#161b28]"
-                    :aria-label="`${b.tiles.length} categories`"
-                  >+{{ b.tiles.length - 1 }}</span>
+                    class="font-display text-2xl font-bold tracking-tight break-all tabular-nums"
+                    :class="b.left < 0 ? 'text-error' : 'text-highlighted'"
+                  >
+                    {{ formatAmount(Math.abs(b.left), currency) }}
+                  </span>
+                  <span class="shrink-0 text-sm text-muted">{{ b.left < 0 ? "over budget" : "left" }}</span>
+                </p>
+
+                <div
+                  class="mt-3 h-3 overflow-hidden rounded-full"
+                  :style="barTrack(budgetColor(b))"
+                  role="progressbar"
+                  :aria-valuenow="Math.round(b.used * 100)"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  :aria-label="`${b.name} spent`"
+                >
+                  <div
+                    class="bar-grow h-full rounded-full shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+                    :style="barFill(budgetColor(b), Math.min(b.used, 1))"
+                  />
                 </div>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate font-display font-bold tracking-tight text-highlighted">{{ b.name }}</p>
-                  <!-- Spent on its own line, the limit under it, so long amounts never get cut -->
-                  <p class="mt-1 font-display text-lg font-bold tracking-tight break-all text-highlighted tabular-nums">
-                    {{ formatAmount(b.spent, currency) }}
+
+                <!-- Same layout as the goal cards: percent on the left, amounts on the right -->
+                <div class="mt-3 flex items-center justify-between gap-3 text-sm text-muted tabular-nums">
+                  <p>
+                    Used
+                    <span
+                      class="font-medium"
+                      :class="b.used > 1 ? 'text-error' : b.used >= 0.9 ? 'text-warning' : 'text-toned'"
+                    >{{ Math.round(b.used * 100) }}%</span>
                   </p>
-                  <p class="text-xs text-muted tabular-nums">of {{ formatAmount(b.budget.amount, currency) }}</p>
-                  <p class="mt-0.5 text-xs tabular-nums" :class="b.left < 0 ? 'text-error' : 'text-dimmed'">
-                    {{ b.left < 0 ? `Over by ${formatAmount(-b.left, currency)}` : `${formatAmount(b.left, currency)} left` }}
+                  <p class="text-right">
+                    <span class="font-medium text-toned">{{ formatAmount(b.spent, currency) }}</span>
+                    of {{ formatAmount(b.budget.amount, currency) }}
                   </p>
                 </div>
-                <ProgressRing :value="b.used" :color="ringColor(b)" :label="`${Math.round(b.used * 100)}% used`" />
               </button>
             </li>
           </ul>
