@@ -42,13 +42,7 @@ const balance = computed(() => {
   const n = Number.parseFloat(amountText.value);
   return toMinor(Number.isFinite(n) ? n : 0, currency.value);
 });
-// Show what was typed (keeps a trailing "." or "0") with grouping, e.g. "1,250.5"
-const amountDisplay = computed(() => {
-  if (!amountText.value) return "0";
-  const [whole = "0", fraction] = amountText.value.split(".");
-  const grouped = new Intl.NumberFormat(undefined).format(Number(whole));
-  return fraction === undefined ? grouped : `${grouped}.${fraction}`;
-});
+const amountDisplay = computed(() => formatAmountInput(amountText.value));
 watch(currency, () => (amountText.value = ""));
 
 // --- Navigation ---

@@ -35,6 +35,14 @@ export function currencySymbol(currency: string) {
   );
 }
 
+// Keypad text shown as typed (keeps a trailing "." or "0") with grouping, e.g. "1250.5" → "1,250.5"
+export function formatAmountInput(text: string) {
+  if (!text) return "0";
+  const [whole = "0", fraction] = text.split(".");
+  const grouped = new Intl.NumberFormat(undefined).format(Number(whole));
+  return fraction === undefined ? grouped : `${grouped}.${fraction}`;
+}
+
 export function currencyOptions() {
   const names = new Intl.DisplayNames(undefined, { type: "currency" });
   return Intl.supportedValuesOf("currency").map((code) => ({

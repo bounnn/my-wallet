@@ -3,7 +3,7 @@ export default defineNuxtConfig({
   modules: ["@vite-pwa/nuxt", "@nuxt/ui"],
   css: ["~/assets/css/main.css"],
   compatibilityDate: "2025-07-15",
-  devtools: { enabled: true },
+  devtools: { enabled: false },
   ssr: false,
   // Dark mode only: always dark, ignoring the system setting and any saved preference
   colorMode: {
@@ -17,8 +17,15 @@ export default defineNuxtConfig({
       meta: [
         { name: "theme-color", content: "#060b1a" },
         { name: "color-scheme", content: "dark" },
-        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+        {
+          name: "viewport",
+          // resizes-content: Android shrinks the page for the keyboard, keeping bottom actions visible
+          content: "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content",
+        },
+        {
+          name: "apple-mobile-web-app-status-bar-style",
+          content: "black-translucent",
+        },
       ],
     },
   },

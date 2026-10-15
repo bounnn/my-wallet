@@ -10,6 +10,8 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@iconify-json/lucide": "^1.2.144",
+    "@internationalized/date": "^3.12.4",
     "@nuxt/ui": "^4.12.0",
     "@vite-pwa/nuxt": "1.1.1",
     "dexie": "^4.4.6",
@@ -20,6 +22,8 @@
     "vue-router": "^5.4.0"
   },
   "devDependencies": {
-    "@vite-pwa/assets-generator": "^2.0.0"
+    "@vite-pwa/assets-generator": "^2.0.0",
+    "typescript": "^7.0.2",
+    "vue-tsc": "^3.3.13"
   }
 }

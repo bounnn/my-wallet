@@ -62,14 +62,6 @@ const expenses = computed(() =>
 );
 
 // Transactions grouped by day, newest first ("Today", "Yesterday", "Wed, 14 Oct")
-const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
-function dayLabel(date: Date) {
-  const today = new Date();
-  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return dayFormat.format(date);
-}
 const days = computed(() => {
   const groups = new Map<string, { label: string; total: number; items: Transaction[] }>();
   for (const t of monthTransactions.value) {

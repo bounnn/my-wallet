@@ -54,6 +54,20 @@
   --ui-border-accented: rgb(255 255 255 / 0.12);
 }
 
+/* App-like touch: fast repeated taps (keypad) don't trigger double-tap zoom; pinch-zoom still works */
+html {
+  touch-action: manipulation;
+}
+
+/* iOS zooms into any focused field under 16px; unlayered so it wins over text-sm/text-xs utilities */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 @media (prefers-contrast: more) {
   :root,
   .dark {
