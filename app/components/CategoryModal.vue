@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import * as v from "valibot";
 
-// Pick a category for the given type, or create a new one (which is then picked)
-const props = defineProps<{ type: Category["type"]; selectedId?: number }>();
+// Pick a category for the given type, or create a new one (which is then picked).
+// Categories are shared by all wallets, except a goal's, which only shows for the goal's wallet (`accountId`).
+const props = defineProps<{ type: Category["type"]; accountId?: number; selectedId?: number }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{ select: [id: number] }>();
 
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
-// Goals' categories are included (adding an expense there saves toward the goal); deleted goals' are not
-const typeCategories = computed(() => (categories.value ?? []).filter((c) => c.type === props.type && !c.archived));
+const { value: goals } = useLiveQuery(() => db.goals.toArray(), []);
+// This wallet's goals' categories are included (adding an expense there saves toward the goal); deleted goals' are not
+const otherWalletGoals = computed(
+  () => new Set((goals.value ?? []).filter((g) => g.accountId !== props.accountId).map((g) => g.categoryId)),
+);
+const typeCategories = computed(() =>
+  (categories.value ?? []).filter((c) => c.type === props.type && !c.archived && !otherWalletGoals.value.has(c.id)),
+);
 
 const view = ref<"pick" | "new">("pick");
 watch(open, (isOpen) => isOpen && (view.value = "pick"));
@@ -19,25 +26,8 @@ function pick(id: number) {
 }
 
 // --- New category ---
-const icons = [
-  "i-lucide-utensils", "i-lucide-coffee", "i-lucide-shopping-basket", "i-lucide-shopping-bag",
-  "i-lucide-shirt", "i-lucide-bus", "i-lucide-car", "i-lucide-fuel",
-  "i-lucide-plane", "i-lucide-house", "i-lucide-zap", "i-lucide-wifi",
-  "i-lucide-smartphone", "i-lucide-receipt", "i-lucide-heart-pulse", "i-lucide-pill",
-  "i-lucide-graduation-cap", "i-lucide-dumbbell", "i-lucide-ticket", "i-lucide-gamepad-2",
-  "i-lucide-gift", "i-lucide-baby", "i-lucide-paw-print", "i-lucide-briefcase",
-  "i-lucide-store", "i-lucide-trending-up", "i-lucide-piggy-bank", "i-lucide-landmark",
-  "i-lucide-wallet", "i-lucide-tag",
-];
-// Full class names so Tailwind can find them
-const swatches: Record<CategoryColor, string> = {
-  primary: "bg-primary",
-  secondary: "bg-secondary",
-  success: "bg-success",
-  info: "bg-info",
-  warning: "bg-warning",
-  error: "bg-error",
-};
+const icons = categoryIcons;
+const swatches = colorSwatches;
 
 const name = ref("");
 const icon = ref(icons[0]!);

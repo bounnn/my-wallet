@@ -5,28 +5,20 @@ const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 
-// Wallets can use different currencies, so totals use the first wallet's currency
-const currency = computed(() => wallets.value?.[0]?.currency ?? "USD");
+// Home shows one wallet at a time (picked in the header), in its own currency
+const { wallet } = useActiveWallet(wallets);
+const currency = computed(() => wallet.value?.currency ?? "USD");
 const walletById = computed(() => new Map((wallets.value ?? []).map((w) => [w.id, w])));
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
 
-// One wallet shows its own name; several are summed into one total card
-const cardName = computed(() =>
-  wallets.value?.length === 1 ? wallets.value[0]!.name : "All wallets",
-);
-
 const signed = (t: Transaction) => (t.type === "income" ? t.amount : -t.amount);
 
-const balance = computed(() =>
-  (wallets.value ?? [])
-    .filter((w) => w.currency === currency.value)
-    .reduce(
-      (sum, w) =>
-        sum +
-        w.initialBalance +
-        (transactions.value ?? []).filter((t) => t.accountId === w.id).reduce((s, t) => s + signed(t), 0),
-      0,
-    ),
+const walletTransactions = computed(() =>
+  (transactions.value ?? []).filter((t) => t.accountId === wallet.value?.id),
+);
+
+const balance = computed(
+  () => (wallet.value?.initialBalance ?? 0) + walletTransactions.value.reduce((s, t) => s + signed(t), 0),
 );
 
 // Picked month (MonthPicker in the top bar) filters the whole screen
@@ -39,8 +31,7 @@ const month = computed(() => new Date(pickedMonth.value.year, pickedMonth.value.
 const monthTransactions = computed(() => {
   const from = month.value;
   const to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
-  return (transactions.value ?? [])
-    .filter((t) => walletById.value.get(t.accountId)?.currency === currency.value)
+  return walletTransactions.value
     .filter((t) => t.date >= from && t.date < to)
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 });
@@ -101,7 +92,7 @@ const weeks = computed(() => {
 // (undefined = not picked yet), null = all closed
 const openWeek = ref<number | null>();
 const isWeekOpen = (key: number) => (openWeek.value === undefined ? weeks.value[0]?.key : openWeek.value) === key;
-watch(pickedMonth, () => (openWeek.value = undefined));
+watch([pickedMonth, () => wallet.value?.id], () => (openWeek.value = undefined));
 
 // Categories split into Expenses and Income sections (a goal's category can be in both), biggest first
 function groupByCategory(type: Transaction["type"], typeTotal: number) {
@@ -133,7 +124,7 @@ const categorySections = computed(() =>
 
 // One category open at a time, all closed to start so the list reads as a summary
 const openCategory = ref<string | null>(null);
-watch(pickedMonth, () => (openCategory.value = null));
+watch([pickedMonth, () => wallet.value?.id], () => (openCategory.value = null));
 
 // Tapping a transaction opens its details (edit / delete). Kept as the tapped copy so the
 // modal still has it while closing after a delete.
@@ -148,8 +139,11 @@ function showDetails(t: Transaction) {
 <template>
   <div>
     <!-- Same header as the other tabs (no title), so the month picker sits where it does on Report.
-         The picker filters the whole screen. -->
+         The wallet and month pickers filter the whole screen; the wallet one only shows when there's a choice. -->
     <PageHeader>
+      <template #leading>
+        <WalletPicker />
+      </template>
       <template #trailing>
         <MonthPicker v-model="pickedMonth" />
       </template>
@@ -157,7 +151,7 @@ function showDetails(t: Transaction) {
 
     <div class="px-4">
       <!-- Hero: total balance + this month's income and expenses -->
-      <WalletCard :name="cardName" :currency="currency" :balance="balance" label="Total balance" tilt>
+      <WalletCard :name="wallet?.name ?? ''" :currency="currency" :balance="balance" label="Balance" tilt>
         <div class="mt-4 grid grid-cols-2 gap-3 border-t border-white/15 pt-3">
           <div class="flex min-w-0 items-center gap-2.5">
             <span class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/12">
@@ -183,6 +177,9 @@ function showDetails(t: Transaction) {
           </div>
         </div>
       </WalletCard>
+
+      <!-- The app's promise, scrolling edge to edge under the hero -->
+      <MarqueeBanner text="Works offline - Your data never leaves this device" class="-mx-4 mt-8 w-auto" />
 
       <!-- Transactions: by date (weeks) or by category -->
       <section class="mt-8">

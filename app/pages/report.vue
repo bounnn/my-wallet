@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { CalendarDate } from "@internationalized/date";
 
-// Report (ui/ref1, middle screen): the month's expenses or income by category as a donut,
+// Report (ui/ref1, middle screen): the picked wallet's expenses or income for the month by category as a donut,
 // or the last 6 months as bars, with a per-category list compared to last month
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 
-// Same as home: totals use the first wallet's currency
-const currency = computed(() => wallets.value?.[0]?.currency ?? "USD");
-const walletById = computed(() => new Map((wallets.value ?? []).map((w) => [w.id, w])));
+// One wallet at a time, in its own currency (same picker as home and plan)
+const { wallet } = useActiveWallet(wallets);
+const currency = computed(() => wallet.value?.currency ?? "USD");
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
 
 const now = new Date();
@@ -24,12 +24,12 @@ const types = [
 const view = ref<"donut" | "bars">("donut");
 const typeName = computed(() => (type.value === "expense" ? "Expenses" : "Income"));
 
-// The picked type's transactions in [from, to), in the shown currency
+// The picked type's transactions in [from, to), from the picked wallet
 function inRange(from: Date, to: Date) {
   return (transactions.value ?? []).filter(
     (t) =>
       t.type === type.value &&
-      walletById.value.get(t.accountId)?.currency === currency.value &&
+      t.accountId === wallet.value?.id &&
       t.date >= from &&
       t.date < to,
   );
@@ -124,7 +124,12 @@ const barFill = (color: CategoryColor, share: number) => ({
 
 <template>
   <div>
-    <PageHeader title="Report">
+    <!-- With several wallets the wallet picker takes the title's place, like home: the month pill is too long
+         to fit a title and two pills on a phone -->
+    <PageHeader :title="(wallets?.length ?? 0) > 1 ? undefined : 'Report'">
+      <template #leading>
+        <WalletPicker />
+      </template>
       <template #trailing>
         <MonthPicker v-model="pickedMonth" />
       </template>

@@ -35,12 +35,14 @@ export interface Transaction {
   createdAt: Date;
 }
 
-// Savings goal, backed by its own expense category (which holds the name, icon and color).
+// Savings goal in one wallet, backed by its own expense category (which holds the name, icon and color).
 // Adding money is an expense in that category, taking it out an income, so
-// saved = initialSaved + expenses - incomes in the goal's category.
+// saved = initialSaved + expenses - incomes in the goal's category, from the goal's wallet.
 export interface Goal {
   id: number;
+  accountId: number;
   categoryId: number;
+  // The wallet's currency, which is locked while the wallet has goals
   currency: string;
   // Minor units, like Transaction.amount
   target: number;
@@ -51,11 +53,12 @@ export interface Goal {
   createdAt: Date;
 }
 
-// Spending limit for one month, shared by one or more expense categories, in the home/report currency
-// (first wallet's). A category is in at most one budget per month. Each month starts empty; last
+// One wallet's spending limit for one month, shared by one or more expense categories, in the wallet's
+// currency. A category is in at most one budget per wallet and month. Each month starts empty; last
 // month's budgets can be copied in.
 export interface Budget {
   id: number;
+  accountId: number;
   // "YYYY-MM" (monthKey in utils/date.ts)
   month: string;
   // Shown on the card; falls back to the category names
@@ -166,6 +169,31 @@ db.version(5)
         b.month = monthKey(b.createdAt);
       }),
   );
+
+// v6: goals and budgets belong to a wallet (categories stay shared). Goals go to the first wallet in their
+// currency, budgets to the main (first) wallet, whose currency they were in.
+db.version(6)
+  .stores({
+    goals: "++id, &categoryId, accountId",
+    budgets: "++id, month, accountId, *categoryIds",
+  })
+  .upgrade(async (tx) => {
+    const wallets: Account[] = await tx.table("accounts").orderBy("id").toArray();
+    const main = wallets[0];
+    if (!main) return;
+    await tx
+      .table("goals")
+      .toCollection()
+      .modify((g) => {
+        g.accountId = (wallets.find((w) => w.currency === g.currency) ?? main).id;
+      });
+    await tx
+      .table("budgets")
+      .toCollection()
+      .modify((b) => {
+        b.accountId = main.id;
+      });
+  });
 
 // New databases skip upgrades, so seed them on creation
 db.on("populate", (tx) => tx.table("categories").bulkAdd(defaultCategories));

@@ -1,24 +1,15 @@
 <script setup lang="ts">
 // Put money into a goal, or take some out, typed on the in-app keypad. Either way it's a real
-// transaction in the goal's category: adding is an expense from a wallet, taking out an income back to it.
+// transaction in the goal's category: adding is an expense from the goal's wallet, taking out an income back to it.
 const props = defineProps<{ goal?: Goal; category?: Category; saved: number; mode: "add" | "take" }>();
 const open = defineModel<boolean>("open", { required: true });
 
-const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
+const { value: wallet } = useLiveQuery(() => {
+  const id = props.goal?.accountId;
+  return id === undefined ? undefined : db.accounts.get(id);
+});
 
 const currency = computed(() => props.goal?.currency ?? "USD");
-// Only wallets in the goal's currency can move money in or out
-const goalWallets = computed(() => (wallets.value ?? []).filter((w) => w.currency === currency.value));
-const accountId = ref<number>();
-const wallet = computed(() => goalWallets.value.find((w) => w.id === accountId.value));
-const walletItems = computed(() =>
-  goalWallets.value.map((w) => ({
-    type: "checkbox" as const,
-    label: w.name,
-    checked: w.id === accountId.value,
-    onUpdateChecked: () => (accountId.value = w.id),
-  })),
-);
 
 const amountText = ref("");
 const error = ref<string>();
@@ -26,7 +17,6 @@ watch(open, (isOpen) => {
   if (!isOpen) return;
   amountText.value = "";
   error.value = undefined;
-  if (!goalWallets.value.some((w) => w.id === accountId.value)) accountId.value = goalWallets.value[0]?.id;
 });
 watch(amountText, () => (error.value = undefined));
 
@@ -43,7 +33,7 @@ async function save() {
   const goal = props.goal;
   if (!goal) return;
   if (!wallet.value) {
-    error.value = `You need a ${currency.value} wallet`;
+    error.value = "This goal's wallet was deleted";
     return;
   }
   if (amount.value <= 0) {
@@ -120,16 +110,6 @@ async function save() {
               </span>
             </p>
           </div>
-
-          <!-- Which wallet the money comes from / goes back to; a menu only when there's a choice -->
-          <UDropdownMenu v-if="goalWallets.length > 1" :items="walletItems" :content="{ align: 'end' }">
-            <button type="button" class="flex h-12 w-full items-center gap-3 px-4 text-left">
-              <UIcon name="i-lucide-wallet" class="size-5 shrink-0 text-dimmed" />
-              <span class="flex-1 text-sm text-muted">{{ mode === "add" ? "From" : "To" }}</span>
-              <span class="truncate text-sm font-medium text-highlighted">{{ wallet?.name }}</span>
-              <UIcon name="i-lucide-chevron-right" class="size-4 shrink-0 text-dimmed" />
-            </button>
-          </UDropdownMenu>
         </div>
 
         <AmountKeypad v-model="amountText" :decimals="currencyDigits(currency)" class="mt-3" />

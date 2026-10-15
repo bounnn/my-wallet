@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Copy budgets from an earlier month into `month`: all ticked to start, untick the ones not wanted.
-// Categories that already have a budget in `month` (or were archived) are left out of the copies.
-const props = defineProps<{ from: Budget[]; fromLabel: string; month: string; currency: string }>();
+// Copy a wallet's budgets from an earlier month into `month`: all ticked to start, untick the ones not wanted.
+// Categories that already have one of the wallet's budgets in `month` (or were archived) are left out of the copies.
+const props = defineProps<{ from: Budget[]; fromLabel: string; month: string; wallet: Account }>();
+const currency = computed(() => props.wallet.currency);
 const open = defineModel<boolean>("open", { required: true });
 
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
@@ -9,7 +10,9 @@ const { value: monthBudgets } = useLiveQuery(() => db.budgets.where("month").equ
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
 
 const rows = computed(() => {
-  const taken = new Set((monthBudgets.value ?? []).flatMap((b) => b.categoryIds));
+  const taken = new Set(
+    (monthBudgets.value ?? []).filter((b) => b.accountId === props.wallet.id).flatMap((b) => b.categoryIds),
+  );
   return props.from
     .map((b) => {
       const categoryIds = b.categoryIds.filter((id) => !taken.has(id) && !categoryById.value.get(id)?.archived);
@@ -34,6 +37,7 @@ async function copy() {
   const copies = rows.value
     .filter((r) => picked.value.includes(r.budget.id))
     .map((r) => ({
+      accountId: props.wallet.id,
       month: props.month,
       name: r.budget.name,
       categoryIds: r.categoryIds,

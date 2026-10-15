@@ -2,9 +2,9 @@
 import { CalendarDate, getLocalTimeZone, type DateValue } from "@internationalized/date";
 import * as v from "valibot";
 
-// Create a savings goal, or edit one when `goal` is given: name, target, optional due date, icon, color.
+// Create a savings goal in `wallet`, or edit one when `goal` is given: name, target, optional due date, icon, color.
 // Name, icon and color live on the goal's own expense category.
-const props = defineProps<{ goal?: Goal; currency: string }>();
+const props = defineProps<{ goal?: Goal; wallet?: Account }>();
 const open = defineModel<boolean>("open", { required: true });
 
 const { value: categories } = useLiveQuery(() => db.categories.where("type").equals("expense").toArray(), []);
@@ -26,7 +26,7 @@ const swatches: Record<CategoryColor, string> = {
   error: "bg-error",
 };
 
-const currency = computed(() => props.goal?.currency ?? props.currency);
+const currency = computed(() => props.goal?.currency ?? props.wallet?.currency ?? "USD");
 const name = ref("");
 const targetText = ref("");
 const icon = ref(icons[0]!);
@@ -100,8 +100,10 @@ async function save() {
         await db.categories.update(goal.categoryId, category);
         await db.goals.update(goal.id, fields);
       } else {
+        if (!props.wallet) throw new Error("Add a wallet first");
+        const accountId = props.wallet.id;
         const categoryId = await db.categories.add({ ...category, type: "expense" });
-        await db.goals.add({ ...fields, categoryId, currency: currency.value, initialSaved: 0, createdAt: new Date() });
+        await db.goals.add({ ...fields, accountId, categoryId, currency: currency.value, initialSaved: 0, createdAt: new Date() });
       }
     });
     open.value = false;

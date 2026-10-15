@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import * as v from "valibot";
 
-// Create a budget in `month` ("YYYY-MM") for one or more expense categories, or edit / remove one when `budget` is given
-const props = defineProps<{ budget?: Budget; month: string; currency: string }>();
+// Create a budget in `wallet` for `month` ("YYYY-MM") covering one or more expense categories, or edit / remove one
+// when `budget` is given
+const props = defineProps<{ budget?: Budget; month: string; wallet: Account }>();
+const currency = computed(() => props.wallet.currency);
 const open = defineModel<boolean>("open", { required: true });
 
 const { value: categories } = useLiveQuery(() => db.categories.where("type").equals("expense").toArray(), []);
 const { value: budgets } = useLiveQuery(() => db.budgets.where("month").equals(props.month).toArray(), []);
 const { value: goals } = useLiveQuery(() => db.goals.toArray(), []);
 
-// A category is in at most one budget a month, so only offer the free ones (plus this budget's own).
+// A category is in at most one of the wallet's budgets a month, so only offer the free ones (plus this budget's own).
 // Goals' categories are savings, not spending, so they're left out.
 const choices = computed(() => {
   const taken = new Set(
-    (budgets.value ?? []).filter((b) => b.id !== props.budget?.id).flatMap((b) => b.categoryIds),
+    (budgets.value ?? [])
+      .filter((b) => b.accountId === props.wallet.id && b.id !== props.budget?.id)
+      .flatMap((b) => b.categoryIds),
   );
   const goalCategories = new Set((goals.value ?? []).map((g) => g.categoryId));
   return (categories.value ?? []).filter((c) => !c.archived && !taken.has(c.id) && !goalCategories.has(c.id));
@@ -35,7 +39,7 @@ watch(open, (isOpen) => {
   if (!isOpen) return;
   categoryIds.value = [...(props.budget?.categoryIds ?? [])];
   name.value = props.budget?.name ?? "";
-  amountText.value = props.budget ? formatAmount(props.budget.amount, props.currency) : "";
+  amountText.value = props.budget ? formatAmount(props.budget.amount, currency.value) : "";
   errors.value = {};
 });
 
@@ -61,7 +65,7 @@ async function save() {
     categoryIds: picked.value.map((c) => c.id),
     // A name only matters for several categories; one category is named after itself
     name: picked.value.length > 1 ? name.value : "",
-    amount: parseAmount(amountText.value, props.currency),
+    amount: parseAmount(amountText.value, currency.value),
   });
   if (!result.success) {
     const nested = v.flatten<typeof schema>(result.issues).nested ?? {};
@@ -73,7 +77,7 @@ async function save() {
   saving.value = true;
   try {
     if (props.budget) await db.budgets.update(props.budget.id, fields);
-    else await db.budgets.add({ ...fields, month: props.month, createdAt: new Date() });
+    else await db.budgets.add({ ...fields, accountId: props.wallet.id, month: props.month, createdAt: new Date() });
     open.value = false;
   } catch (error) {
     toast.add({

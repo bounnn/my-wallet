@@ -13,6 +13,7 @@ const editId = Number(useRoute().query.id) || undefined;
 
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
+const { value: goals } = useLiveQuery(() => db.goals.toArray(), []);
 
 // --- Type: expense / income ---
 const type = ref<Transaction["type"]>("expense");
@@ -21,12 +22,13 @@ const types = [
   { label: "Income", value: "income" },
 ];
 
-// --- Wallet: defaults to the first one; only shown when there is a choice ---
+// --- Wallet: defaults to the one home shows; only shown when there is a choice ---
+const { wallet: activeWallet } = useActiveWallet(wallets);
 const accountId = ref<number>();
 watch(
-  wallets,
-  (list) => {
-    if (accountId.value === undefined) accountId.value = list?.[0]?.id;
+  activeWallet,
+  (w) => {
+    if (accountId.value === undefined) accountId.value = w?.id;
   },
   { immediate: true },
 );
@@ -34,14 +36,17 @@ const wallet = computed(() =>
   wallets.value?.find((w) => w.id === accountId.value),
 );
 const currency = computed(() => wallet.value?.currency ?? "USD");
-// The amount was typed for the old currency's decimals, so a different currency starts it over
+// The amount was typed for the old currency's decimals, so a different currency starts it over.
+// Another wallet's goal can't be picked, so its category is cleared too.
 function pickWallet(w: Account) {
   if (w.currency !== currency.value) amountText.value = "";
+  const pickedGoal = goals.value?.find((g) => g.categoryId === categoryId.value);
+  if (pickedGoal && pickedGoal.accountId !== w.id) categoryId.value = undefined;
   accountId.value = w.id;
 }
-// Editing a goal's money only offers wallets in the goal's currency, the only ones it counts
+// Editing a goal's money keeps it in the goal's wallet, the only one it counts
 const walletChoices = computed(() =>
-  (wallets.value ?? []).filter((w) => !goal.value || w.currency === goal.value.currency),
+  (wallets.value ?? []).filter((w) => !goal.value || w.id === goal.value.accountId),
 );
 const walletItems = computed(() =>
   walletChoices.value.map((w) => ({
@@ -580,6 +585,7 @@ const chip = (active: boolean) =>
     <CategoryModal
       v-model:open="categoryOpen"
       :type="type"
+      :account-id="accountId"
       :selected-id="categoryId"
       @select="categoryId = $event"
     />

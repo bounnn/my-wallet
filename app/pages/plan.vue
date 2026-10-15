@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { CalendarDate } from "@internationalized/date";
 
-// My Plan (ui/ref1, right screen): savings goals with progress against their due date,
-// then the picked month's budgets as bars (each month starts empty; earlier budgets can be copied in)
+// My Plan (ui/ref1, right screen): the picked wallet's savings goals with progress against their due date,
+// then its budgets for the picked month as bars (each month starts empty; earlier budgets can be copied in)
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 const { value: goals } = useLiveQuery(() => db.goals.toArray(), []);
 const { value: budgets } = useLiveQuery(() => db.budgets.toArray(), []);
 
-// Same as home and report: budgets use the first wallet's currency
-const currency = computed(() => wallets.value?.[0]?.currency ?? "USD");
-const walletById = computed(() => new Map((wallets.value ?? []).map((w) => [w.id, w])));
+// Goals and budgets belong to a wallet (same picker as home); categories are shared
+const { wallet } = useActiveWallet(wallets);
+const accountId = computed(() => wallet.value?.id);
+const currency = computed(() => wallet.value?.currency ?? "USD");
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -21,11 +22,12 @@ const now = new Date();
 
 type Status = { tone: "success" | "error" | "info"; icon: string; text: string };
 
-const savedFor = (g: Goal) => goalSaved(g, transactions.value ?? [], walletById.value);
+const savedFor = (g: Goal) => goalSaved(g, transactions.value ?? []);
 
 // Unfinished goals first, oldest first within each group
 const goalCards = computed(() =>
   (goals.value ?? [])
+    .filter((g) => g.accountId === accountId.value)
     .map((g) => {
       const category = categoryById.value.get(g.categoryId);
       const saved = savedFor(g);
@@ -166,12 +168,13 @@ const barBehind = (color: CategoryColor, progress: number, behind: number) => ({
 const pickedMonth = shallowRef(new CalendarDate(now.getFullYear(), now.getMonth() + 1, 1));
 const month = computed(() => new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1));
 const pickedKey = computed(() => monthKey(month.value));
-const monthBudgets = computed(() => (budgets.value ?? []).filter((b) => b.month === pickedKey.value));
+const walletBudgets = computed(() => (budgets.value ?? []).filter((b) => b.accountId === accountId.value));
+const monthBudgets = computed(() => walletBudgets.value.filter((b) => b.month === pickedKey.value));
 
 // The latest earlier month with budgets, offered for copying when the picked month has none
 const longMonth = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 const previous = computed(() => {
-  const key = (budgets.value ?? [])
+  const key = walletBudgets.value
     .map((b) => b.month)
     .filter((m) => m < pickedKey.value)
     .sort()
@@ -180,7 +183,7 @@ const previous = computed(() => {
   const [year, m] = key.split("-").map(Number);
   return {
     label: longMonth.format(new Date(year!, m! - 1, 1)),
-    budgets: (budgets.value ?? []).filter((b) => b.month === key),
+    budgets: walletBudgets.value.filter((b) => b.month === key),
   };
 });
 
@@ -189,8 +192,7 @@ const monthSpent = computed(() => {
   const to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
   const spent = new Map<number, number>();
   for (const t of transactions.value ?? []) {
-    if (t.type !== "expense" || t.date < from || t.date >= to) continue;
-    if (walletById.value.get(t.accountId)?.currency !== currency.value) continue;
+    if (t.type !== "expense" || t.accountId !== accountId.value || t.date < from || t.date >= to) continue;
     spent.set(t.categoryId, (spent.get(t.categoryId) ?? 0) + t.amount);
   }
   return spent;
@@ -243,7 +245,11 @@ const copyModalOpen = ref(false);
 
 <template>
   <div>
-    <PageHeader title="My Plan" />
+    <PageHeader title="My Plan">
+      <template #trailing>
+        <WalletPicker />
+      </template>
+    </PageHeader>
 
     <div class="px-4">
       <!-- Goals -->
@@ -487,7 +493,7 @@ const copyModalOpen = ref(false);
       </section>
     </div>
 
-    <GoalModal v-model:open="goalModalOpen" :goal="editingGoal" :currency="currency" />
+    <GoalModal v-model:open="goalModalOpen" :goal="editingGoal" :wallet="wallet" />
     <GoalMoneyModal
       v-model:open="moneyModalOpen"
       :goal="moneyCard?.goal"
@@ -495,14 +501,20 @@ const copyModalOpen = ref(false);
       :saved="moneyCard?.saved ?? 0"
       :mode="moneyMode"
     />
-    <BudgetModal v-model:open="budgetModalOpen" :budget="editingBudget" :month="pickedKey" :currency="currency" />
+    <BudgetModal
+      v-if="wallet"
+      v-model:open="budgetModalOpen"
+      :budget="editingBudget"
+      :month="pickedKey"
+      :wallet="wallet"
+    />
     <BudgetCopyModal
-      v-if="previous"
+      v-if="previous && wallet"
       v-model:open="copyModalOpen"
       :from="previous.budgets"
       :from-label="previous.label"
       :month="pickedKey"
-      :currency="currency"
+      :wallet="wallet"
     />
   </div>
 </template>
