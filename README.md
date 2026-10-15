@@ -1,6 +1,6 @@
 # My Wallet
 
-A personal money tracker that runs entirely on your device. It's an installable PWA with no backend and no account: all data lives in the browser's IndexedDB.
+A personal money tracker that runs entirely on your device. It's a PWA with no backend and no account: all data lives in the browser's IndexedDB. It only runs once added to the home screen.
 
 Live at **https://bounnn.github.io/my-wallet/**
 
@@ -12,7 +12,8 @@ Live at **https://bounnn.github.io/my-wallet/**
 - **Plan**: savings goals (adding money to a goal is a transaction) and monthly budgets that can span several categories
 - **Settings**: wallets, categories, backup to a JSON file, restore, and erasing all data
 - **Several wallets**: each has its own currency and starting balance; home, report and plan show one wallet at a time
-- **Works offline**: installable to the home screen, and the service worker caches the whole app
+- **Home screen only**: in a browser tab the app shows an install page instead (install prompt on Android and desktop, Share → Add to Home Screen steps on iPhone, open-in-browser steps for LINE, Facebook and Instagram)
+- **Works offline**: the service worker caches the whole app
 
 ## Tech stack
 
@@ -32,6 +33,8 @@ bun run dev
 
 The app runs at `http://localhost:3000`. The service worker is enabled in dev too.
 
+The home screen check is off in dev so the app works in a browser tab; open `/install` to see the install page. To try the check itself, run `bun run generate && bun run preview`.
+
 ## Scripts
 
 | Command            | What it does                         |
@@ -46,16 +49,19 @@ App icons are generated from `public/logo.svg` (see `pwa-assets.config.ts`).
 
 ```
 app/
-  pages/        home (index), add, report, plan, settings, welcome
+  pages/        home (index), add, report, plan, settings, welcome, install
   components/   modals, charts, keypad, rows and cards
   composables/  live queries, active wallet, backup, viewport helpers
-  utils/        db schema (db.ts), backup, money, dates, calculator
-  middleware/   sends first-time users to the welcome page
+  utils/        db schema (db.ts), data writes (wallets, categories, transactions,
+                goals, budgets), backup, money, dates, calculator, install checks
+  middleware/   sends browser tabs to the install page and first-time users to welcome
 ```
 
 ## Data
 
 - Everything is stored locally in IndexedDB. Clearing site data or uninstalling the app erases it, so use **Settings → Back up data** regularly.
+- On iPhone, Safari and the home screen app keep separate storage, so data entered in Safari doesn't carry over. The install page offers a backup when Safari has data.
+- Database writes go through the functions in `app/utils/` (`wallets`, `categories`, `transactions`, `goals`, `budgets`); writes that touch several tables run in one `db.transaction`.
 - Amounts are stored as integers in the currency's minor units (cents for USD, none for JPY).
 - Schema changes go through Dexie versions in `app/utils/db.ts`; bump the version and add an upgrade when changing a table.
 - Backup files carry a `version` (see `app/utils/backup.ts`) and older versions keep restoring.
@@ -77,24 +83,24 @@ app/
 **Tests**
 
 - [ ] Set up Vitest with [`@nuxt/test-utils`](https://nuxt.com/docs/getting-started/testing)
-- [ ] Unit test the pure utils: `money`, `calc`, `date`, `goal`, `category`
+- [ ] Unit test the pure utils: `money`, `calc`, `date`, `goals`, `categoryStyle`, `install`
 - [ ] Test Dexie upgrades and the backup round trip (export, then restore) with `fake-indexeddb`, including restoring v1 backups
 
 **Nuxt UI**
 
-- [ ] Build the forms in modals and on `/add` with `UForm` and Valibot schemas, instead of checking fields by hand, so errors show on each field
+- [x] Build the forms in modals and on `/add` with `UForm` and Valibot schemas, instead of checking fields by hand, so errors show on each field
 - [ ] Review overlays against the Nuxt UI pattern (`useOverlay` for modals opened from code)
 
 **Nuxt**
 
-- [ ] Set a page title on each page with `useHead` / `useSeoMeta`, and `lang` on `<html>`
-- [ ] Split the largest pages (`add.vue`, `plan.vue`) into smaller components
-- [ ] Remove the empty `server/` folder (the app has no backend)
+- [x] Set a page title on each page with `useHead` / `useSeoMeta`, and `lang` on `<html>`
+- [x] Split the largest pages (`add.vue`, `plan.vue`) into smaller components
+- [x] Remove the empty `server/` folder (the app has no backend)
 
 **Data (Dexie)**
 
-- [ ] Move database writes out of pages and components (11 files write directly) into one data layer in `utils/`, so rules like deleting a wallet together with its transactions, goals and budgets live in one place
-- [ ] Check that every write touching more than one table runs inside `db.transaction`
+- [x] Move database writes out of pages and components (11 files write directly) into one data layer in `utils/`, so rules like deleting a wallet together with its transactions, goals and budgets live in one place
+- [x] Check that every write touching more than one table runs inside `db.transaction`
 
 ### Make it fast
 
