@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
+import { monthKey } from "./date";
 
 export interface Account {
   id: number;
@@ -16,6 +17,8 @@ export interface Category {
   icon?: string;
   // Tint for the icon tile, one of the app's semantic colors
   color?: CategoryColor;
+  // Hidden from pickers (a deleted goal's category); its transactions still show it
+  archived?: boolean;
 }
 
 export type CategoryColor = "primary" | "secondary" | "success" | "info" | "warning" | "error";
@@ -32,6 +35,37 @@ export interface Transaction {
   createdAt: Date;
 }
 
+// Savings goal, backed by its own expense category (which holds the name, icon and color).
+// Adding money is an expense in that category, taking it out an income, so
+// saved = initialSaved + expenses - incomes in the goal's category.
+export interface Goal {
+  id: number;
+  categoryId: number;
+  currency: string;
+  // Minor units, like Transaction.amount
+  target: number;
+  // Already saved before the goal was tracked (goals made before v4 keep their old total here)
+  initialSaved: number;
+  // Optional due date; with it the plan page shows whether saving is on schedule
+  deadline?: Date;
+  createdAt: Date;
+}
+
+// Spending limit for one month, shared by one or more expense categories, in the home/report currency
+// (first wallet's). A category is in at most one budget per month. Each month starts empty; last
+// month's budgets can be copied in.
+export interface Budget {
+  id: number;
+  // "YYYY-MM" (monthKey in utils/date.ts)
+  month: string;
+  // Shown on the card; falls back to the category names
+  name?: string;
+  categoryIds: number[];
+  // Minor units
+  amount: number;
+  createdAt: Date;
+}
+
 // One day's transactions in a list, with its net total (minor units)
 export interface TransactionDay {
   key: string;
@@ -45,6 +79,8 @@ export const db = new Dexie("my-wallet") as Dexie & {
   accounts: EntityTable<Account, "id">;
   categories: EntityTable<Category, "id">;
   transactions: EntityTable<Transaction, "id">;
+  goals: EntityTable<Goal, "id">;
+  budgets: EntityTable<Budget, "id">;
 };
 
 // Starter categories so a transaction can be added right after onboarding
@@ -82,6 +118,54 @@ db.version(2)
   .upgrade(async (tx) => {
     if ((await tx.table("categories").count()) === 0) await tx.table("categories").bulkAdd(defaultCategories);
   });
+
+// v3: savings goals and monthly category budgets (plan page); one budget per category
+db.version(3).stores({
+  goals: "++id",
+  budgets: "++id, &categoryId",
+});
+
+// v4: goals become categories with transactions; budgets cover several categories
+db.version(4)
+  .stores({
+    goals: "++id, &categoryId",
+    budgets: "++id, *categoryIds",
+  })
+  .upgrade(async (tx) => {
+    await tx
+      .table("budgets")
+      .toCollection()
+      .modify((b) => {
+        b.categoryIds = [b.categoryId];
+        delete b.categoryId;
+      });
+    for (const g of await tx.table("goals").toArray()) {
+      const categoryId = await tx
+        .table("categories")
+        .add({ name: g.name, type: "expense", icon: g.icon, color: g.color });
+      await tx.table("goals").put({
+        id: g.id,
+        categoryId,
+        currency: g.currency,
+        target: g.target,
+        initialSaved: g.saved,
+        deadline: g.deadline,
+        createdAt: g.createdAt,
+      });
+    }
+  });
+
+// v5: budgets belong to a month; existing ones go to the month they were made in
+db.version(5)
+  .stores({ budgets: "++id, month, *categoryIds" })
+  .upgrade((tx) =>
+    tx
+      .table("budgets")
+      .toCollection()
+      .modify((b) => {
+        b.month = monthKey(b.createdAt);
+      }),
+  );
 
 // New databases skip upgrades, so seed them on creation
 db.on("populate", (tx) => tx.table("categories").bulkAdd(defaultCategories));

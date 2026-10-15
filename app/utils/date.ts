@@ -5,6 +5,11 @@ export function formatDate(date: Date) {
   return `${dd}/${mm}/${date.getFullYear()}`;
 }
 
+// Month as "YYYY-MM", e.g. "2026-10" (budgets are stored per month); sorts in date order
+export function monthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 // Midnight on the Monday of the date's week (weeks run Monday → Sunday)
 export function startOfWeek(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() - ((date.getDay() + 6) % 7));

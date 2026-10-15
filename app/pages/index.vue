@@ -52,11 +52,13 @@ const expenses = computed(() =>
   monthTransactions.value.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0),
 );
 
-// Category slides: the month's total per category, biggest first
+// Category slides: the month's total per category, biggest first. Keyed by type too, since a goal's
+// category has both money added (expense) and taken out (income).
 const categoryTotals = computed(() => {
-  const totals = new Map<number, { category?: Category; type: Transaction["type"]; total: number; count: number }>();
+  const totals = new Map<string, { category?: Category; type: Transaction["type"]; total: number; count: number }>();
   for (const t of monthTransactions.value) {
-    const entry = totals.get(t.categoryId) ?? {
+    const key = `${t.type}-${t.categoryId}`;
+    const entry = totals.get(key) ?? {
       category: categoryById.value.get(t.categoryId),
       type: t.type,
       total: 0,
@@ -64,7 +66,7 @@ const categoryTotals = computed(() => {
     };
     entry.total += t.amount;
     entry.count++;
-    totals.set(t.categoryId, entry);
+    totals.set(key, entry);
   }
   return [...totals.entries()].map(([id, e]) => ({ id, ...e })).sort((a, b) => b.total - a.total);
 });

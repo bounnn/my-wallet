@@ -35,6 +35,23 @@ export function formatMoneyParts(minor: number, currency: string) {
     .map((part) => ({ value: part.value, isFraction: part.type === "decimal" || part.type === "fraction" }));
 }
 
+// Amount typed in a text field, regrouped as you type ("1250.5" → "1,250.5"); drops anything that isn't
+// a digit or the first ".", and extra decimals for the currency
+export function groupAmountInput(text: string, currency: string) {
+  const [whole = "", ...rest] = text.replace(/[^\d.]/g, "").split(".");
+  const digits = currencyDigits(currency);
+  const fraction = rest.length && digits ? rest.join("").slice(0, digits) : undefined;
+  if (!whole && fraction === undefined) return "";
+  return formatAmountInput(fraction === undefined ? whole : `${whole || "0"}.${fraction}`);
+}
+
+// Typed amount text ("1,250.50") → minor units; commas are grouping. NaN when it isn't a number.
+export function parseAmount(text: string, currency: string) {
+  const clean = text.replaceAll(",", "").trim();
+  if (!/^\d*\.?\d*$/.test(clean) || !/\d/.test(clean)) return Number.NaN;
+  return toMinor(Number.parseFloat(clean), currency);
+}
+
 export function currencySymbol(currency: string) {
   return (
     new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" })

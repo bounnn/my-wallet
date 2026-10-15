@@ -7,7 +7,8 @@ const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{ select: [id: number] }>();
 
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
-const typeCategories = computed(() => (categories.value ?? []).filter((c) => c.type === props.type));
+// Goals' categories are included (adding an expense there saves toward the goal); deleted goals' are not
+const typeCategories = computed(() => (categories.value ?? []).filter((c) => c.type === props.type && !c.archived));
 
 const view = ref<"pick" | "new">("pick");
 watch(open, (isOpen) => isOpen && (view.value = "pick"));
