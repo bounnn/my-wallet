@@ -40,7 +40,10 @@ const search = ref("");
 const filteredCurrencies = computed(() => {
   const q = search.value.trim().toLowerCase();
   const list = q
-    ? currencies.filter((c) => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q))
+    ? currencies.filter(
+        (c) =>
+          c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q),
+      )
     : currencies;
   const selected = list.find((c) => c.code === currency.value);
   return selected ? [selected, ...list.filter((c) => c !== selected)] : list;
@@ -79,7 +82,11 @@ async function next({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
 
 async function create() {
   try {
-    await addWallet({ name: name.value, currency: currency.value, initialBalance: balance.value });
+    await addWallet({
+      name: name.value,
+      currency: currency.value,
+      initialBalance: balance.value,
+    });
     return true;
   } catch (error) {
     toast.add({
@@ -107,13 +114,20 @@ const buttonLabel = computed(
 function focusStep(el: Element) {
   el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
 }
-const transition = computed(() => (direction.value === "forward" ? "step-forward" : "step-back"));
+const transition = computed(() =>
+  direction.value === "forward" ? "step-forward" : "step-back",
+);
 </script>
 
 <template>
-  <div class="flex h-dvh flex-col overflow-hidden pt-[max(env(safe-area-inset-top),0.75rem)]">
+  <div
+    class="flex h-dvh flex-col overflow-hidden pt-[max(env(safe-area-inset-top),0.75rem)]"
+  >
     <!-- Top bar during setup: back + progress -->
-    <div v-if="screen >= 1 && screen <= setupSteps" class="flex h-12 items-center gap-3 px-4">
+    <div
+      v-if="screen >= 1 && screen <= setupSteps"
+      class="flex h-12 items-center gap-3 px-4"
+    >
       <UButton
         icon="i-lucide-chevron-left"
         color="neutral"
@@ -137,7 +151,9 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
           :class="i <= screen ? 'bg-primary' : 'bg-accented'"
         />
       </div>
-      <span class="w-9 text-right text-sm tabular-nums text-dimmed">{{ screen }}/{{ setupSteps }}</span>
+      <span class="w-9 text-right text-sm tabular-nums text-dimmed"
+        >{{ screen }}/{{ setupSteps }}</span
+      >
     </div>
 
     <UForm
@@ -147,46 +163,77 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
       class="relative flex min-h-0 flex-1 flex-col"
       @submit="next"
     >
-      <Transition :name="transition" mode="out-in" appear @after-enter="focusStep">
+      <Transition
+        :name="transition"
+        mode="out-in"
+        appear
+        @after-enter="focusStep"
+      >
         <!-- Intro: one slide, card as the hero visual -->
-        <section v-if="current === 'intro'" key="intro" class="flex flex-1 flex-col px-6">
-          <div class="relative flex flex-1 items-center justify-center" aria-hidden="true">
-            <div class="absolute size-72 rounded-full bg-navy-600/30 blur-3xl" />
-            <div class="hero-float w-[85%] [perspective:900px]">
+        <section
+          v-if="current === 'intro'"
+          key="intro"
+          class="flex flex-1 flex-col px-6"
+        >
+          <div
+            class="relative flex flex-1 items-center justify-center"
+            aria-hidden="true"
+          >
+            <div
+              class="absolute size-72 rounded-full bg-navy-600/30 blur-3xl"
+            />
+            <div class="hero-float w-[85%] perspective-[900px]">
               <WalletCard
                 name="Main Wallet"
                 currency="USD"
                 :balance="1248000"
-                class="[transform:rotateX(14deg)_rotateZ(-8deg)]"
+                class="transform-[rotateX(14deg)_rotateZ(-8deg)]"
               />
             </div>
-            <div class="coin-float metal-coin absolute top-[18%] right-[8%] flex size-14 items-center justify-center rounded-full">
+            <div
+              class="coin-float metal-coin absolute top-[18%] right-[8%] flex size-14 items-center justify-center rounded-full"
+            >
               <SparkGlyph class="size-8" />
             </div>
-            <div class="coin-float-slow metal-coin absolute bottom-[20%] left-[6%] flex size-9 items-center justify-center rounded-full">
+            <div
+              class="coin-float-slow metal-coin absolute bottom-[20%] left-[6%] flex size-9 items-center justify-center rounded-full"
+            >
               <SparkGlyph class="size-5" />
             </div>
           </div>
 
           <div class="pb-2">
-            <span class="inline-flex rounded-md bg-elevated px-2.5 py-1 text-xs font-medium text-toned">
+            <span
+              class="inline-flex rounded-md bg-elevated px-2.5 py-1 text-xs font-medium text-toned"
+            >
               Private by design
             </span>
-            <h1 class="mt-4 font-display text-[2rem] leading-tight font-bold tracking-tight text-highlighted">
+            <h1
+              class="mt-4 font-display text-[2rem] leading-tight font-bold tracking-tight text-highlighted"
+            >
               Your money,<br />only on your phone.
             </h1>
             <p class="mt-3 text-muted">
-              No account, no cloud. Track income and spending on this device, fully offline.
+              No account, no cloud. Track income and spending on this device,
+              fully offline.
             </p>
           </div>
         </section>
 
         <!-- Step 1: name -->
-        <section v-else-if="current === 'name'" key="name" class="flex-1 px-6 pt-6">
-          <h1 class="font-display text-[1.75rem] leading-tight font-bold tracking-tight text-highlighted">
+        <section
+          v-else-if="current === 'name'"
+          key="name"
+          class="flex-1 px-6 pt-6"
+        >
+          <h1
+            class="font-display text-[1.75rem] leading-tight font-bold tracking-tight text-highlighted"
+          >
             Name your wallet
           </h1>
-          <p class="mt-2 text-muted">You can add more wallets later for cards, savings or cash.</p>
+          <p class="mt-2 text-muted">
+            You can add more wallets later for cards, savings or cash.
+          </p>
 
           <UFormField name="name" class="mt-10">
             <UInput
@@ -219,12 +266,20 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
         </section>
 
         <!-- Step 2: currency -->
-        <section v-else-if="current === 'currency'" key="currency" class="flex min-h-0 flex-1 flex-col pt-6">
+        <section
+          v-else-if="current === 'currency'"
+          key="currency"
+          class="flex min-h-0 flex-1 flex-col pt-6"
+        >
           <div class="px-6">
-            <h1 class="font-display text-[1.75rem] leading-tight font-bold tracking-tight text-highlighted">
+            <h1
+              class="font-display text-[1.75rem] leading-tight font-bold tracking-tight text-highlighted"
+            >
               Choose a currency
             </h1>
-            <p class="mt-2 text-muted">All amounts in {{ name }} will use this currency.</p>
+            <p class="mt-2 text-muted">
+              All amounts in {{ name }} will use this currency.
+            </p>
             <UInput
               v-model="search"
               icon="i-lucide-search"
@@ -235,7 +290,11 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
             />
           </div>
 
-          <ul class="mt-3 min-h-0 flex-1 overflow-y-auto px-3 pb-4" role="listbox" aria-label="Currencies">
+          <ul
+            class="mt-3 min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+            role="listbox"
+            aria-label="Currencies"
+          >
             <li v-for="c in filteredCurrencies" :key="c.code">
               <button
                 type="button"
@@ -251,65 +310,114 @@ const transition = computed(() => (direction.value === "forward" ? "step-forward
                   {{ c.symbol.length <= 2 ? c.symbol : c.code.slice(0, 1) }}
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span class="block font-semibold text-highlighted">{{ c.code }}</span>
-                  <span class="block truncate text-sm text-muted">{{ c.name }}</span>
+                  <span class="block font-semibold text-highlighted">{{
+                    c.code
+                  }}</span>
+                  <span class="block truncate text-sm text-muted">{{
+                    c.name
+                  }}</span>
                 </span>
-                <UIcon v-if="c.code === currency" name="i-lucide-circle-check" class="size-5 text-primary" />
+                <UIcon
+                  v-if="c.code === currency"
+                  name="i-lucide-circle-check"
+                  class="size-5 text-primary"
+                />
               </button>
             </li>
-            <li v-if="!filteredCurrencies.length" class="px-3 py-6 text-center text-muted">
+            <li
+              v-if="!filteredCurrencies.length"
+              class="px-3 py-6 text-center text-muted"
+            >
               No currency matches “{{ search }}”
             </li>
           </ul>
         </section>
 
         <!-- Step 3: starting balance with in-app keypad -->
-        <section v-else-if="current === 'balance'" key="balance" class="flex min-h-0 flex-1 flex-col px-6 pt-6">
-          <h1 class="font-display text-[1.75rem] leading-tight font-bold tracking-tight text-highlighted">
+        <section
+          v-else-if="current === 'balance'"
+          key="balance"
+          class="flex min-h-0 flex-1 flex-col px-6 pt-6"
+        >
+          <h1
+            class="font-display text-[1.75rem] leading-tight font-bold tracking-tight text-highlighted"
+          >
             Starting balance
           </h1>
-          <p class="mt-2 text-muted">How much is in {{ name }} right now? Leave it at 0 to start fresh.</p>
+          <p class="mt-2 text-muted">
+            How much is in {{ name }} right now? Leave it at 0 to start fresh.
+          </p>
 
           <div class="flex flex-1 flex-col items-center justify-center py-4">
             <p
               class="flex max-w-full items-baseline gap-2 font-display font-bold tracking-tight tabular-nums"
               aria-live="polite"
             >
-              <span class="text-3xl text-dimmed">{{ currencySymbol(currency) }}</span>
+              <span class="text-3xl text-dimmed">{{
+                currencySymbol(currency)
+              }}</span>
               <span
                 class="truncate text-highlighted"
                 :class="amountDisplay.length > 9 ? 'text-4xl' : 'text-5xl'"
-              >{{ amountDisplay }}</span>
+                >{{ amountDisplay }}</span
+              >
             </p>
-            <span class="mt-3 flex items-center gap-2 rounded-full bg-muted py-1 pr-1.5 pl-3 text-sm text-muted">
+            <span
+              class="mt-3 flex items-center gap-2 rounded-full bg-muted py-1 pr-1.5 pl-3 text-sm text-muted"
+            >
               {{ name }}
-              <span class="rounded-full bg-elevated px-2 py-0.5 text-xs font-medium text-toned">{{ currency }}</span>
+              <span
+                class="rounded-full bg-elevated px-2 py-0.5 text-xs font-medium text-toned"
+                >{{ currency }}</span
+              >
             </span>
           </div>
 
-          <AmountKeypad v-model="amountText" :decimals="digits" class="-mx-2 mb-2" />
+          <AmountKeypad
+            v-model="amountText"
+            :decimals="digits"
+            class="-mx-2 mb-2"
+          />
         </section>
 
         <!-- Done: the wallet card lands -->
         <section v-else key="done" class="flex flex-1 flex-col px-6">
           <div class="flex flex-1 items-center">
-            <WalletCard :name="name" :currency="currency" :balance="balance" class="card-land" />
+            <WalletCard
+              :name="name"
+              :currency="currency"
+              :balance="balance"
+              class="card-land"
+            />
           </div>
           <div class="pb-2">
-            <span class="inline-flex items-center gap-1.5 rounded-md bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
+            <span
+              class="inline-flex items-center gap-1.5 rounded-md bg-success/10 px-2.5 py-1 text-xs font-medium text-success"
+            >
               <UIcon name="i-lucide-check" class="size-3.5" /> Wallet created
             </span>
-            <h1 class="mt-4 font-display text-[2rem] leading-tight font-bold tracking-tight text-highlighted">
+            <h1
+              class="mt-4 font-display text-[2rem] leading-tight font-bold tracking-tight text-highlighted"
+            >
               You're all set.
             </h1>
-            <p class="mt-3 text-muted">Start adding income and expenses to see where your money goes.</p>
+            <p class="mt-3 text-muted">
+              Start adding income and expenses to see where your money goes.
+            </p>
           </div>
         </section>
       </Transition>
 
       <!-- Primary action pinned within thumb reach -->
       <div class="px-6 pt-3 pb-[max(env(safe-area-inset-bottom),1rem)]">
-        <UButton type="submit" :label="buttonLabel" size="xl" block loading-auto class="h-14 justify-center" />
+        <UButton
+          type="submit"
+          :label="buttonLabel"
+          size="xl"
+          block
+          loading-auto
+          class="h-14 justify-center"
+        />
       </div>
     </UForm>
   </div>
