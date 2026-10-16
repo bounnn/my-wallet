@@ -98,15 +98,24 @@ function openKeypad() {
 // Keep the screen (and its Save button) above the on-screen keyboard
 const viewport = useVisualViewport();
 
-// --- Scan: a bill photo or bank screenshot is read on the review screen, which replaces this one ---
+// --- Scan: up to 5 bill photos or bank screenshots are read on the review screen, which replaces this one ---
 const scanInput = useTemplateRef("scanInput");
 function pickScan(event: Event) {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  // Lets the same image be picked again
+  const files = [...(input.files ?? [])];
+  // Lets the same images be picked again
   input.value = "";
-  if (!file) return;
-  pendingScan.value = file;
+  if (!files.length) return;
+  // The phone's picker can't be limited, so extra images are left out
+  if (files.length > maxScanImages) {
+    toast.add({
+      title: `Only the first ${maxScanImages} images are read`,
+      description: `${files.length - maxScanImages} left out. Scan them next.`,
+      color: "warning",
+      icon: "i-lucide-images",
+    });
+  }
+  pendingScan.value = files.slice(0, maxScanImages);
   navigateTo("/scan", { replace: true });
 }
 
@@ -264,10 +273,10 @@ function close() {
           icon="i-lucide-scan-text"
           color="neutral"
           variant="ghost"
-          aria-label="Scan bill or screenshot"
+          aria-label="Scan bills or screenshots, up to 5"
           @click="scanInput?.click()"
         />
-        <input ref="scanInput" type="file" accept="image/*" class="hidden" @change="pickScan" />
+        <input ref="scanInput" type="file" accept="image/*" multiple class="hidden" @change="pickScan" />
       </template>
       <span
         v-if="goal"

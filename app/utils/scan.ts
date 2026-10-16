@@ -17,6 +17,8 @@ export interface ScannedPayment {
   note?: string;
   // Text the category suggestions read
   text: string;
+  // Which of the picked images it's on (0-based)
+  image?: number;
 }
 
 // A scanned payment on the review screen, editable before it's saved
@@ -39,10 +41,15 @@ export interface ScanDraft {
   maybeAdded: boolean;
   // Best category guesses, best first
   suggestions: number[];
+  // Which of the picked images it's on (0-based)
+  image?: number;
 }
 
-// The image picked on the add screen, handed to the review screen
-export const pendingScan = shallowRef<File>();
+// Images read in one scan; more would take long on a phone
+export const maxScanImages = 5;
+
+// The images picked on the add screen, handed to the review screen
+export const pendingScan = shallowRef<File[]>([]);
 
 // One worker for the app; the first scan downloads the language files (a few MB), later ones reuse it.
 // Its logger is set once, so progress goes through whichever scan is running.
@@ -159,6 +166,19 @@ function billPayment(lines: string[], text: string): ScannedPayment | undefined 
     date: findDate(text),
     text: text.slice(0, 600),
   };
+}
+
+// Overlapping screenshots show the same payment twice. Only payments with a date and time are compared:
+// two bills without one can be the same amount on purpose.
+export function dropRepeats(payments: ScannedPayment[]) {
+  const seen = new Set<string>();
+  return payments.filter((p) => {
+    if (!p.date) return true;
+    const key = [p.type, p.amount, p.date.getTime(), p.note].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function findPayments(rawText: string): ScannedPayment[] {

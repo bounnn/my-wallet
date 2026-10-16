@@ -15,13 +15,17 @@ const { wallet: activeWallet } = useActiveWallet(walletsAtScan);
 
 const toast = useToast();
 
-// --- Reading: the image handed over from the add screen; without one (e.g. a reload) there's nothing to show ---
-const file = pendingScan.value;
-pendingScan.value = undefined;
-if (!file) navigateTo("/add", { replace: true });
+// --- Reading: the images handed over from the add screen (up to 5), one after another; without any (e.g. a
+// reload) there's nothing to show ---
+const files = pendingScan.value;
+pendingScan.value = [];
+if (!files.length) navigateTo("/add", { replace: true });
 
 const reading = ref(true);
+// The image being read (0-based) and how far along it is (0–1)
+const readIndex = ref(0);
 const readProgress = ref(0);
+const overallProgress = computed(() => (readIndex.value + readProgress.value) / Math.max(files.length, 1));
 const readError = ref("");
 // Deep, so ticking and suggestions update in place. Each day is kept raw: a CalendarDate has private fields,
 // which break inside a reactive proxy.
@@ -69,6 +73,7 @@ async function toDrafts(payments: ScannedPayment[]) {
         billCurrency: p.currency,
         maybeAdded,
         suggestions: [],
+        image: p.image,
       };
     }),
   );
@@ -110,16 +115,40 @@ async function suggestAll(payments: ScannedPayment[]) {
 }
 
 onMounted(async () => {
-  if (!file) return;
-  let payments: ScannedPayment[];
+  if (!files.length) return;
+  // An image that can't be read is skipped; the others still count
+  const found: ScannedPayment[] = [];
+  let failed = 0;
+  let lastError: unknown;
+  for (const [image, file] of files.entries()) {
+    readIndex.value = image;
+    readProgress.value = 0;
+    try {
+      const text = await readImage(file, (p) => (readProgress.value = p));
+      found.push(...findPayments(text).map((p) => ({ ...p, image })));
+    } catch (err) {
+      failed++;
+      lastError = err;
+    }
+  }
+
+  const payments = dropRepeats(found);
   try {
-    payments = findPayments(await readImage(file, (p) => (readProgress.value = p)));
+    if (failed === files.length) throw lastError;
     drafts.value = await toDrafts(payments);
   } catch (err) {
     readError.value = errorText(err);
     return;
   } finally {
     reading.value = false;
+  }
+  if (failed) {
+    toast.add({
+      title: `Couldn't read ${failed} of ${files.length} images`,
+      description: "The payments below are from the others.",
+      color: "warning",
+      icon: "i-lucide-circle-alert",
+    });
   }
   if (payments.length) suggestAll(payments);
 });
@@ -231,9 +260,15 @@ function close() {
       <!-- Reading -->
       <div v-if="reading" class="space-y-3 rounded-2xl bg-muted p-4" role="status">
         <p class="text-sm text-muted">
-          {{ readProgress ? "Reading the bill on this phone" : "Getting the text reader ready" }}
+          {{
+            !overallProgress
+              ? "Getting the text reader ready"
+              : files.length > 1
+                ? `Reading image ${readIndex + 1} of ${files.length} on this phone`
+                : "Reading the bill on this phone"
+          }}
         </p>
-        <UProgress :model-value="readProgress ? Math.round(readProgress * 100) : null" />
+        <UProgress :model-value="overallProgress ? Math.round(overallProgress * 100) : null" />
       </div>
 
       <div v-else-if="readError" class="rounded-2xl bg-muted p-4">
@@ -302,6 +337,12 @@ function close() {
                   </span>
                   <span v-if="walletOf(d)" class="truncate rounded-md bg-elevated px-1.5 py-0.5 text-xs font-medium text-toned">
                     {{ walletOf(d)!.name }}
+                  </span>
+                  <span
+                    v-if="files.length > 1 && d.image !== undefined"
+                    class="rounded-md bg-elevated px-1.5 py-0.5 text-xs font-medium text-toned"
+                  >
+                    Image {{ d.image + 1 }}
                   </span>
                   <span
                     v-if="d.billCurrency && walletOf(d) && d.billCurrency !== walletOf(d)!.currency"
