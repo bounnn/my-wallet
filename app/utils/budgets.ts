@@ -3,6 +3,14 @@ import { UserError } from "./error";
 
 export type BudgetFields = Pick<Budget, "name" | "categoryIds" | "amount">;
 
+// A plain copy to store: the fields often come from a form or live query, where categoryIds is a Vue reactive
+// proxy, which IndexedDB can't store ("could not be cloned")
+const plain = ({ name, categoryIds, amount }: BudgetFields): BudgetFields => ({
+  name,
+  categoryIds: [...categoryIds],
+  amount,
+});
+
 // A category is in at most one of a wallet's budgets a month; `id` is the budget being edited
 async function checkFree(accountId: number, month: string, categoryIds: number[], id?: number) {
   const others = await db.budgets.where("month").equals(month).toArray();
@@ -13,14 +21,14 @@ async function checkFree(accountId: number, month: string, categoryIds: number[]
 export function addBudget(accountId: number, month: string, fields: BudgetFields) {
   return db.transaction("rw", db.budgets, async () => {
     await checkFree(accountId, month, fields.categoryIds);
-    return db.budgets.add({ ...fields, accountId, month, createdAt: new Date() });
+    return db.budgets.add({ ...plain(fields), accountId, month, createdAt: new Date() });
   });
 }
 
 export function updateBudget(budget: Budget, fields: BudgetFields) {
   return db.transaction("rw", db.budgets, async () => {
     await checkFree(budget.accountId, budget.month, fields.categoryIds, budget.id);
-    await db.budgets.update(budget.id, fields);
+    await db.budgets.update(budget.id, plain(fields));
   });
 }
 
@@ -29,7 +37,7 @@ export function copyBudgets(accountId: number, month: string, budgets: BudgetFie
   return db.transaction("rw", db.budgets, async () => {
     await checkFree(accountId, month, budgets.flatMap((b) => b.categoryIds));
     const now = new Date();
-    await db.budgets.bulkAdd(budgets.map((b) => ({ ...b, accountId, month, createdAt: now })));
+    await db.budgets.bulkAdd(budgets.map((b) => ({ ...plain(b), accountId, month, createdAt: now })));
   });
 }
 
