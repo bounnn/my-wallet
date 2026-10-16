@@ -7,7 +7,9 @@ Live at **https://bounnn.github.io/my-wallet/**
 ## Features
 
 - **Home**: the selected wallet's balance for the month, with transactions grouped by day
-- **Add**: income and expense entry with a built-in calculator keypad, category, wallet and date
+- **Add**: income and expense entry with a built-in calculator keypad, category, wallet and date. **Add & new** saves and stays for the next entry, keeping the type, wallet and date
+- **Scan**: read up to 5 bill photos or bank-app screenshots (BCEL One) on the device, in Lao and English. Every payment found (total paid, date paid, merchant, currency) is listed to tick, edit (wallet, amount, category, date, note) and save together. Payments repeated across screenshots are listed once, ones that look already saved start unticked, and the bill's currency picks a matching wallet (amounts are never converted)
+- **Category suggestions**: a small multilingual AI model running on the device ranks the categories for each scanned payment, mostly by matching past transaction notes, so it gets better with use (roughly right, not always)
 - **Report**: spending by category (donut) and by month (bars), with per-category totals
 - **Plan**: savings goals (adding money to a goal is a transaction) and monthly budgets that can span several categories
 - **Settings**: wallets, categories, backup to a JSON file, restore, and erasing all data
@@ -20,7 +22,9 @@ Live at **https://bounnn.github.io/my-wallet/**
 - [Nuxt 4](https://nuxt.com) in SPA mode (`ssr: false`)
 - [Nuxt UI 4](https://ui.nuxt.com) and Tailwind CSS 4, dark mode only
 - [Dexie](https://dexie.org) for IndexedDB storage, with live queries
-- [Valibot](https://valibot.dev) for validating backup files
+- [Valibot](https://valibot.dev) for validating forms and backup files
+- [Tesseract.js](https://tesseract.projectnaptha.com) for reading bills (`lao+eng`, Sauvola thresholding)
+- [Transformers.js](https://huggingface.co/docs/transformers.js) running [`Xenova/multilingual-e5-small`](https://huggingface.co/Xenova/multilingual-e5-small) for category suggestions
 - [@vite-pwa/nuxt](https://vite-pwa-org.netlify.app/frameworks/nuxt) for the manifest, icons and service worker
 - [Bun](https://bun.sh) as the package manager
 
@@ -49,11 +53,12 @@ App icons are generated from `public/logo.svg` (see `pwa-assets.config.ts`).
 
 ```
 app/
-  pages/        home (index), add, report, plan, settings, welcome, install
+  pages/        home (index), add, scan, report, plan, settings, welcome, install
   components/   modals, charts, keypad, rows and cards
   composables/  live queries, active wallet, backup, viewport helpers
   utils/        db schema (db.ts), data writes (wallets, categories, transactions,
-                goals, budgets), backup, money, dates, calculator, install checks
+                goals, budgets), backup, money, dates, calculator, install checks,
+                scanning (scan.ts) and category suggestions (suggest.ts)
   middleware/   sends browser tabs to the install page and first-time users to welcome
 ```
 
@@ -65,6 +70,14 @@ app/
 - Amounts are stored as integers in the currency's minor units (cents for USD, none for JPY).
 - Schema changes go through Dexie versions in `app/utils/db.ts`; bump the version and add an upgrade when changing a table.
 - Backup files carry a `version` (see `app/utils/backup.ts`) and older versions keep restoring.
+- Write plain values to Dexie: IndexedDB can't store Vue reactive proxies ("could not be cloned"), so copy arrays from forms before saving (see `plain` in `app/utils/budgets.ts`).
+
+## Scanning
+
+- Images and their text never leave the device. Only the models are downloaded, once, then cached: the Tesseract engine and Lao/English language files (a few MB, from jsDelivr) on the first scan, and the category model (~118 MB, from Hugging Face; too big for GitHub Pages' 100 MB file limit) on the first suggestion. Both load only when scanning, not at startup.
+- BCEL One screenshots read almost perfectly. Paper bills are best effort: totals are usually right, dates often misread, so every payment is checked before saving.
+- Sauvola thresholding (`thresholding_method: "2"`) is needed: the default drops BCEL's light grey detail lines.
+- Category suggestions compare the payment with past notes and with category names (plus Lao/English example words for the starter categories). Small chat models (Qwen2.5 0.5B) were tried and scored 0/8; they don't know Lao.
 
 ## To do
 
@@ -77,7 +90,7 @@ app/
 **Tooling**
 
 - [ ] Add [`@nuxt/eslint`](https://eslint.nuxt.com) and a `lint` script
-- [ ] Add a `typecheck` script (`nuxi typecheck` with `vue-tsc`)
+- [ ] Add a `typecheck` script (`nuxi typecheck` with `vue-tsc`); `vue-tsc` doesn't run with TypeScript 7 yet ("Cannot find module typescript/lib/tsc")
 - [ ] Run lint and typecheck in the deploy workflow before building, so a broken build never ships
 
 **Tests**
@@ -109,3 +122,5 @@ app/
 ## Deployment
 
 Every push to `main` builds the app with `nuxi generate` and publishes it to GitHub Pages (`.github/workflows/deploy.yml`). The build sets `NUXT_APP_BASE_URL` to `/<repo>/` so routes, the manifest and the service worker work under the repo path.
+
+The installed app updates itself, but only checks for a new version when it starts. On iPhone it's usually resumed from the background instead, so after a deploy swipe it away in the app switcher and open it again (sometimes twice: the first launch downloads the update, the next one shows it).
