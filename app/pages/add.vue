@@ -98,6 +98,18 @@ function openKeypad() {
 // Keep the screen (and its Save button) above the on-screen keyboard
 const viewport = useVisualViewport();
 
+// --- Scan: a bill photo or bank screenshot is read on the review screen, which replaces this one ---
+const scanInput = useTemplateRef("scanInput");
+function pickScan(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  // Lets the same image be picked again
+  input.value = "";
+  if (!file) return;
+  pendingScan.value = file;
+  navigateTo("/scan", { replace: true });
+}
+
 // --- Edit: fill the form from the saved transaction; a missing one (deleted meanwhile) goes home ---
 const editing = shallowRef<Transaction>();
 // Money added to / taken out of a goal: type and category stay the goal's, so it keeps counting there
@@ -157,6 +169,19 @@ watch(categoryId, () => form.value?.clear("categoryId"));
 
 const toast = useToast();
 
+// "Add & new" saves and stays for the next one: type, wallet and date are kept (entries in a row are often
+// from the same day), the rest starts over with the keypad up
+const addAnother = ref(false);
+async function startNext() {
+  amountText.value = "";
+  categoryId.value = undefined;
+  note.value = "";
+  keypadOpen.value = true;
+  // After the watchers above ran, so the cleared fields don't show "required" errors
+  await nextTick();
+  form.value?.clear();
+}
+
 async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
   // The picked day at the current time, so same-day entries keep their order.
   // An edit keeps the transaction's own time.
@@ -196,7 +221,8 @@ async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
     color: "success",
     icon: "i-lucide-circle-check",
   });
-  close();
+  if (addAnother.value) startNext();
+  else close();
 }
 
 // Go back when the screen was opened from inside the app, otherwise home (e.g. after a reload)
@@ -233,6 +259,16 @@ function close() {
       >
         {{ editId ? (type === "income" ? "Edit income" : "Edit expense") : "Add new" }}
       </h1>
+      <template v-if="!editId">
+        <UButton
+          icon="i-lucide-scan-text"
+          color="neutral"
+          variant="ghost"
+          aria-label="Scan bill or screenshot"
+          @click="scanInput?.click()"
+        />
+        <input ref="scanInput" type="file" accept="image/*" class="hidden" @change="pickScan" />
+      </template>
       <span
         v-if="goal"
         class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-xs font-medium text-toned"
@@ -393,14 +429,28 @@ function close() {
       class="shrink-0 rounded-t-3xl bg-muted px-3 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]"
     >
       <div class="flex gap-2">
+        <!-- Save and stay for the next entry (new transactions only) -->
+        <UButton
+          v-if="!editId"
+          type="submit"
+          form="add-transaction"
+          label="Add & new"
+          color="neutral"
+          variant="soft"
+          size="xl"
+          :loading="form?.loading && addAnother"
+          class="h-13 flex-1 justify-center bg-elevated"
+          @click="addAnother = true"
+        />
         <UButton
           type="submit"
           form="add-transaction"
           :label="editId ? 'Save changes' : type === 'income' ? 'Add income' : 'Add expense'"
           size="xl"
           block
-          :loading="form?.loading"
+          :loading="form?.loading && !addAnother"
           class="h-13 flex-1 justify-center"
+          @click="addAnother = false"
         />
         <UButton
           :icon="showKeypad ? 'i-lucide-chevron-down' : 'i-lucide-calculator'"
