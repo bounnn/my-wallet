@@ -5,20 +5,28 @@ import * as v from "valibot";
 
 definePageMeta({ layout: false });
 
-// /add?id=12 edits that transaction instead of adding a new one
-const editId = Number(useRoute().query.id) || undefined;
-useHead({ title: editId ? "Edit transaction" : "Add transaction" });
+// /add?id=12 edits that transaction instead of adding a new one, /add?transfer=3 that transfer.
+// /add?type=income (or expense, transfer) starts on that type: the buttons under home's card.
+const query = useRoute().query;
+const editId = Number(query.id) || undefined;
+const editTransferId = Number(query.transfer) || undefined;
+const isEdit = editId !== undefined || editTransferId !== undefined;
+const startType = (["expense", "income", "transfer"] as const).find((t) => t === query.type) ?? "expense";
+useHead({ title: editTransferId ? "Edit transfer" : editId ? "Edit transaction" : "Add transaction" });
 
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 const { value: goals } = useLiveQuery(() => db.goals.toArray(), []);
 
-// --- Type: expense / income ---
-const type = ref<Transaction["type"]>("expense");
-const types = [
+// --- Type: expense / income, or a transfer between two wallets (offered with 2+ wallets). An edit
+// can switch expense / income but not turn a transaction into a transfer or back. ---
+type Mode = Transaction["type"] | "transfer";
+const type = ref<Mode>(isEdit ? "expense" : startType);
+const types = computed(() => [
   { label: "Expense", value: "expense" },
   { label: "Income", value: "income" },
-];
+  ...(!isEdit && (wallets.value?.length ?? 0) > 1 ? [{ label: "Transfer", value: "transfer" }] : []),
+]);
 
 // --- Wallet: defaults to the one home shows; only shown when there is a choice ---
 const { wallet: activeWallet } = useActiveWallet(wallets);
@@ -47,6 +55,90 @@ const walletChoices = computed(() =>
   (wallets.value ?? []).filter((w) => !goal.value || w.id === goal.value.accountId),
 );
 const walletOpen = ref(false);
+// The wallet modal picks the transaction's wallet, or a transfer's sending or receiving one
+const walletTarget = ref<"from" | "to">("from");
+function openWalletPicker(target: "from" | "to") {
+  walletTarget.value = target;
+  walletOpen.value = true;
+}
+
+// --- Transfer: money leaves the wallet above (accountId) and lands in toAccountId ---
+const toAccountId = ref<number>();
+const toWallet = computed(() => wallets.value?.find((w) => w.id === toAccountId.value));
+const toCurrency = computed(() => toWallet.value?.currency ?? currency.value);
+const sameCurrency = computed(() => toCurrency.value === currency.value);
+// Picking the other side's wallet swaps the two, so they never match
+function pickFrom(w: Account) {
+  if (w.id === toAccountId.value) toAccountId.value = accountId.value;
+  pickWallet(w);
+  prefillRate();
+}
+function pickTo(w: Account) {
+  if (w.id === accountId.value && toWallet.value) pickWallet(toWallet.value);
+  toAccountId.value = w.id;
+  prefillRate();
+}
+// The typed rate is turned round with the wallets, so it still holds
+function swapWallets() {
+  const from = wallet.value;
+  const to = toWallet.value;
+  if (!from || !to) return;
+  const current = rate.value;
+  pickWallet(to);
+  toAccountId.value = from.id;
+  if (Number.isFinite(current)) setRate(1 / current);
+}
+// Starts on another wallet than the sending one
+function defaultToWallet() {
+  if (toAccountId.value === undefined || toAccountId.value === accountId.value) {
+    toAccountId.value = wallets.value?.find((w) => w.id !== accountId.value)?.id;
+  }
+}
+
+// Exchange rate, needed when the currencies differ. Typed as "1 USD = 21,500 LAK", or turned round
+// ("1 LAK = 0.000047 USD" is hard to type), whichever reads better.
+const rateText = ref("");
+const rateFlipped = ref(false);
+const rateBase = computed(() => (rateFlipped.value ? toCurrency.value : currency.value));
+const rateQuote = computed(() => (rateFlipped.value ? currency.value : toCurrency.value));
+// Sending → receiving currency, NaN until a rate above 0 is typed
+const rate = computed(() => {
+  const n = parseNumberInput(rateText.value);
+  return n > 0 ? (rateFlipped.value ? 1 / n : n) : Number.NaN;
+});
+const rateInputText = (n: number) => groupNumberInput(String(Number(n.toFixed(rateDigits))), rateDigits);
+// Shows a rate (sending → receiving) the way round that gives a number of 1 or more
+function setRate(value: number | undefined) {
+  if (!value) {
+    rateText.value = "";
+    return;
+  }
+  rateFlipped.value = value < 1;
+  rateText.value = rateInputText(rateFlipped.value ? 1 / value : value);
+}
+function flipRate() {
+  const current = rate.value;
+  rateFlipped.value = !rateFlipped.value;
+  if (Number.isFinite(current)) rateText.value = rateInputText(rateFlipped.value ? 1 / current : current);
+}
+// Starts with the rate used last between the two currencies
+async function prefillRate() {
+  if (sameCurrency.value) return;
+  setRate(await lastRate(currency.value, toCurrency.value));
+}
+const rateInput = useTemplateRef("rateInput");
+function onRateUpdate(value: string | number | null | undefined) {
+  const grouped = groupNumberInput(String(value ?? ""), rateDigits);
+  rateText.value = grouped;
+  const el = rateInput.value?.inputRef;
+  if (el && el.value !== grouped) el.value = grouped;
+}
+// What arrives, once both the amount and the rate are there
+const received = computed(() => {
+  const n = Number.parseFloat(amountText.value);
+  if (hasOperator(amountText.value) || !(n > 0) || !Number.isFinite(rate.value)) return undefined;
+  return convertAmount(toMinor(n, currency.value), rate.value, currency.value, toCurrency.value);
+});
 
 // --- Amount: a number, or a calculator expression like "12+3×2" that only becomes
 // the amount once = is pressed (the keypad then replaces it with the result) ---
@@ -59,37 +151,46 @@ const categoryOpen = ref(false);
 const category = computed(() =>
   categories.value?.find((c) => c.id === categoryId.value),
 );
-// Categories are per type, so switching type clears the pick
-function setType(value: Transaction["type"]) {
+// Categories are per type, so switching type clears the pick. A transfer gets its receiving wallet
+// and the last rate.
+function setType(value: Mode) {
   if (value !== type.value) categoryId.value = undefined;
   type.value = value;
+  if (value === "transfer") {
+    defaultToWallet();
+    if (!rateText.value) prefillRate();
+  }
 }
 
-// --- Date: today by default (DayPicker) ---
+// --- Date: today by default (DayPicker), or ?date=2026-10-14 (from a day on home's calendar); never a future day ---
 const now = new Date();
-const pickedDay = shallowRef(
-  new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate()),
-);
+const today = new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+function queryDay() {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(query.date ?? ""));
+  if (!match) return undefined;
+  const day = new CalendarDate(Number(match[1]), Number(match[2]), Number(match[3]));
+  return day.compare(today) <= 0 ? day : undefined;
+}
+const pickedDay = shallowRef(queryDay() ?? today);
 
-// --- Note: typing it swaps the keypad for the phone keyboard ---
+// --- Note (and a transfer's rate): typing it swaps the keypad for the phone keyboard ---
 const note = ref("");
-const noteInput = useTemplateRef("noteInput");
-const noteFocused = ref(false);
+const focusedField = ref<"note" | "rate">();
 let keypadTimer: ReturnType<typeof setTimeout> | undefined;
 
-function onNoteFocus() {
+function onFieldFocus(field: "note" | "rate") {
   clearTimeout(keypadTimer);
-  noteFocused.value = true;
+  focusedField.value = field;
 }
 // Bring the keypad back a moment later, so a tap on Save isn't shifted by the layout change
-function onNoteBlur() {
-  keypadTimer = setTimeout(() => (noteFocused.value = false), 150);
+function onFieldBlur() {
+  keypadTimer = setTimeout(() => (focusedField.value = undefined), 150);
 }
-const closeKeyboard = () => noteInput.value?.textareaRef?.blur();
+const closeKeyboard = () => (document.activeElement as HTMLElement | null)?.blur();
 
 // The keypad can be slid down to see the whole form; tapping the amount brings it back
 const keypadOpen = ref(true);
-const showKeypad = computed(() => keypadOpen.value && !noteFocused.value);
+const showKeypad = computed(() => keypadOpen.value && !focusedField.value);
 function openKeypad() {
   closeKeyboard();
   keypadOpen.value = true;
@@ -119,11 +220,37 @@ function pickScan(event: Event) {
   navigateTo("/scan", { replace: true });
 }
 
+// Opened on Transfer: once the wallets are loaded, pick the receiving one and the last rate
+// (or fall back to an expense when there's no second wallet)
+if (!isEdit && startType === "transfer") {
+  const stop = watch(accountId, (id) => {
+    if (id === undefined) return;
+    stop();
+    setType((wallets.value?.length ?? 0) > 1 ? "transfer" : "expense");
+  });
+}
+
 // --- Edit: fill the form from the saved transaction; a missing one (deleted meanwhile) goes home ---
 const editing = shallowRef<Transaction>();
+const editingTransfer = shallowRef<Transfer>();
 // Money added to / taken out of a goal: type and category stay the goal's, so it keeps counting there
 const goal = shallowRef<Goal>();
 onMounted(async () => {
+  if (editTransferId !== undefined) {
+    const t = await db.transfers.get(editTransferId);
+    if (!t) return navigateTo("/", { replace: true });
+    const from = await db.accounts.get(t.fromAccountId);
+    editingTransfer.value = t;
+    type.value = "transfer";
+    accountId.value = t.fromAccountId;
+    toAccountId.value = t.toAccountId;
+    amountText.value = String(fromMinor(t.amount, from?.currency ?? currency.value));
+    setRate(t.rate);
+    pickedDay.value = new CalendarDate(t.date.getFullYear(), t.date.getMonth() + 1, t.date.getDate());
+    note.value = t.note ?? "";
+    keypadOpen.value = false;
+    return;
+  }
   if (editId === undefined) return;
   const t = await db.transactions.get(editId);
   if (!t) return navigateTo("/", { replace: true });
@@ -142,39 +269,55 @@ onMounted(async () => {
 
 // --- Save ---
 // The form's state is the refs above (reactive unwraps them, so the form reads and writes the same values)
-const state = reactive({ amount: amountText, categoryId, accountId, note });
-const schema = v.object({
-  amount: v.pipe(
-    v.string(),
-    // An unfinished sum isn't an amount yet
-    v.check(
-      (text) => !hasOperator(text),
-      ({ input }) => {
-        const total = evaluateExpression(String(input));
-        return Number.isFinite(total) && total > 0
-          ? "Press = to get the total"
-          : "This sum doesn't give an amount above 0";
-      },
-    ),
-    v.transform((text) => {
-      const n = Number.parseFloat(text);
-      return Number.isFinite(n) ? toMinor(n, currency.value) : 0;
-    }),
-    v.minValue(1, "Enter an amount above 0"),
+const state = reactive({ amount: amountText, categoryId, accountId, toAccountId, rate: rateText, note });
+const amountSchema = v.pipe(
+  v.string(),
+  // An unfinished sum isn't an amount yet
+  v.check(
+    (text) => !hasOperator(text),
+    ({ input }) => {
+      const total = evaluateExpression(String(input));
+      return Number.isFinite(total) && total > 0
+        ? "Press = to get the total"
+        : "This sum doesn't give an amount above 0";
+    },
   ),
+  v.transform((text) => {
+    const n = Number.parseFloat(text);
+    return Number.isFinite(n) ? toMinor(n, currency.value) : 0;
+  }),
+  v.minValue(1, "Enter an amount above 0"),
+);
+const noteSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.maxLength(100, "Keep the note under 100 characters"),
+);
+const schema = v.object({
+  amount: amountSchema,
   categoryId: v.number("Pick a category"),
   accountId: v.number("Pick a wallet"),
-  note: v.pipe(
-    v.string(),
-    v.trim(),
-    v.maxLength(100, "Keep the note under 100 characters"),
-  ),
+  note: noteSchema,
 });
+const transferSchema = v.object({
+  amount: amountSchema,
+  accountId: v.number("Pick a wallet"),
+  toAccountId: v.number("Pick a wallet"),
+  // Sending → receiving currency; none between wallets in one currency
+  rate: v.pipe(
+    v.string(),
+    v.transform(() => (sameCurrency.value ? undefined : rate.value)),
+    v.check((r) => r === undefined || Number.isFinite(r), "Enter the exchange rate"),
+  ),
+  note: noteSchema,
+});
+const formSchema = computed(() => (type.value === "transfer" ? transferSchema : schema));
 
 // The keypad and the category / wallet pickers aren't form inputs, so a change clears their error by hand
 const form = useTemplateRef("form");
 watch(amountText, () => form.value?.clear("amount"));
 watch(categoryId, () => form.value?.clear("categoryId"));
+watch(rateText, () => form.value?.clear("rate"));
 
 const toast = useToast();
 
@@ -191,10 +334,13 @@ async function startNext() {
   form.value?.clear();
 }
 
-async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
+type TransactionData = v.InferOutput<typeof schema>;
+type TransferData = v.InferOutput<typeof transferSchema>;
+
+async function save({ data }: FormSubmitEvent<TransactionData | TransferData>) {
   // The picked day at the current time, so same-day entries keep their order.
-  // An edit keeps the transaction's own time.
-  const time = editing.value?.date ?? new Date();
+  // An edit keeps its own time.
+  const time = (editing.value ?? editingTransfer.value)?.date ?? new Date();
   const day = pickedDay.value.toDate(getLocalTimeZone());
   const date = new Date(
     day.getFullYear(),
@@ -205,9 +351,11 @@ async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
     time.getSeconds(),
   );
 
+  if (type.value === "transfer") return finishTransfer(data as TransferData, date);
+  const fields = data as TransactionData;
   try {
     await saveTransaction(
-      { ...data, type: type.value, note: data.note || undefined, date },
+      { ...fields, type: type.value, note: fields.note || undefined, date },
       editing.value?.id,
     );
   } catch (err) {
@@ -234,6 +382,41 @@ async function save({ data }: FormSubmitEvent<v.InferOutput<typeof schema>>) {
   else close();
 }
 
+async function finishTransfer(data: TransferData, date: Date) {
+  try {
+    await saveTransfer(
+      {
+        fromAccountId: data.accountId,
+        toAccountId: data.toAccountId,
+        amount: data.amount,
+        rate: data.rate,
+        note: data.note || undefined,
+        date,
+      },
+      editingTransfer.value?.id,
+    );
+  } catch (err) {
+    toast.add({
+      title: "Couldn't save the transfer",
+      description: errorText(err),
+      color: "error",
+      icon: "i-lucide-circle-alert",
+    });
+    return;
+  }
+  const sent = formatMoney(data.amount, currency.value);
+  toast.add({
+    title: editingTransfer.value ? "Changes saved" : "Transfer added",
+    description: data.rate
+      ? `${sent} → ${formatMoney(convertAmount(data.amount, data.rate, currency.value, toCurrency.value), toCurrency.value)}`
+      : sent,
+    color: "success",
+    icon: "i-lucide-circle-check",
+  });
+  if (addAnother.value) startNext();
+  else close();
+}
+
 // Go back when the screen was opened from inside the app, otherwise home (e.g. after a reload)
 function close() {
   if (window.history.state?.back) useRouter().back();
@@ -253,7 +436,8 @@ function close() {
         : undefined
     "
   >
-    <!-- Top bar: back + title, expense / income switch on the right (one tap, no menu) -->
+    <!-- Top bar: back + title, then the expense / income / transfer switch (one tap, no menu) on its own
+         row, since three choices don't fit next to the title -->
     <header class="flex h-14 shrink-0 items-center gap-2 px-4">
       <UButton
         icon="i-lucide-chevron-left"
@@ -266,9 +450,17 @@ function close() {
       <h1
         class="flex-1 truncate font-display text-lg font-semibold tracking-tight text-highlighted"
       >
-        {{ editId ? (type === "income" ? "Edit income" : "Edit expense") : "Add new" }}
+        {{
+          editTransferId
+            ? "Edit transfer"
+            : editId
+              ? type === "income"
+                ? "Edit income"
+                : "Edit expense"
+              : "Add new"
+        }}
       </h1>
-      <template v-if="!editId">
+      <template v-if="!isEdit && type !== 'transfer'">
         <UButton
           icon="i-lucide-scan-text"
           color="neutral"
@@ -284,24 +476,24 @@ function close() {
       >
         {{ type === "expense" ? "Added to goal" : "Taken out of goal" }}
       </span>
+    </header>
+    <div v-if="!goal && !editTransferId" class="shrink-0 px-4 pb-2">
       <UTabs
-        v-else
         :model-value="type"
         :items="types"
         :content="false"
         variant="pill"
         size="md"
         aria-label="Transaction type"
-        class="w-48 shrink-0"
         :ui="{ trigger: 'h-10' }"
-        @update:model-value="setType($event as Transaction['type'])"
+        @update:model-value="setType($event as Mode)"
       />
-    </header>
+    </div>
 
     <UForm
       id="add-transaction"
       ref="form"
-      :schema="schema"
+      :schema="formSchema"
       :state="state"
       class="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-4"
       @submit="save"
@@ -322,8 +514,89 @@ function close() {
           </template>
         </UFormField>
 
+        <!-- 2. Transfer: from and to wallets (swappable), and the rate when their currencies differ -->
+        <template v-if="type === 'transfer'">
+          <div class="relative divide-y divide-default">
+            <button
+              v-for="side in (['from', 'to'] as const)"
+              :key="side"
+              type="button"
+              class="flex h-14 w-full items-center gap-3 px-4 pr-16 text-left"
+              @click="openWalletPicker(side)"
+            >
+              <UIcon
+                :name="side === 'from' ? 'i-lucide-arrow-up-right' : 'i-lucide-arrow-down-left'"
+                class="size-5 shrink-0 text-dimmed"
+              />
+              <span class="w-10 shrink-0 text-sm text-muted">{{ side === "from" ? "From" : "To" }}</span>
+              <span class="min-w-0 flex-1 truncate font-medium text-highlighted">{{
+                (side === "from" ? wallet : toWallet)?.name
+              }}</span>
+              <span class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-xs font-medium text-toned">{{
+                side === "from" ? currency : toCurrency
+              }}</span>
+            </button>
+            <UButton
+              icon="i-lucide-arrow-down-up"
+              color="neutral"
+              variant="soft"
+              aria-label="Swap wallets"
+              class="absolute top-1/2 right-4 size-10 -translate-y-1/2 justify-center rounded-xl bg-elevated"
+              @click="swapWallets"
+            />
+          </div>
+
+          <UFormField v-if="!sameCurrency" name="rate" :ui="{ error: 'sr-only' }">
+            <template #default="{ error }">
+              <div class="flex items-start gap-3 px-4 py-3">
+                <UIcon name="i-lucide-repeat" class="mt-0.5 size-5 shrink-0 text-dimmed" />
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs" :class="error ? 'text-error' : 'text-muted'" aria-hidden="true">
+                    {{ error || "Exchange rate" }}
+                  </p>
+                  <div class="mt-1 flex items-center gap-2">
+                    <span class="shrink-0 text-sm font-medium text-toned">1 {{ rateBase }} =</span>
+                    <UInput
+                      ref="rateInput"
+                      :model-value="rateText"
+                      variant="none"
+                      placeholder="0"
+                      inputmode="decimal"
+                      :maxlength="20"
+                      autocomplete="off"
+                      enterkeyhint="done"
+                      :aria-label="`Exchange rate, ${rateQuote} for 1 ${rateBase}`"
+                      class="min-w-0 flex-1"
+                      :ui="{ base: 'p-0 font-display text-lg font-semibold tabular-nums caret-primary ring-0' }"
+                      @update:model-value="onRateUpdate"
+                      @focus="onFieldFocus('rate')"
+                      @blur="onFieldBlur"
+                      @keydown.enter.prevent="closeKeyboard"
+                    />
+                    <span class="shrink-0 text-sm font-medium text-toned">{{ rateQuote }}</span>
+                    <!-- mousedown.prevent keeps the keyboard open while turning it round -->
+                    <UButton
+                      icon="i-lucide-arrow-left-right"
+                      color="neutral"
+                      variant="ghost"
+                      :aria-label="`Type the rate for 1 ${rateQuote} instead`"
+                      class="-mr-2 size-10 shrink-0 justify-center"
+                      @mousedown.prevent
+                      @click="flipRate"
+                    />
+                  </div>
+                  <p v-if="received !== undefined" class="mt-1 text-sm text-muted">
+                    Arrives as
+                    <span class="font-medium text-toned tabular-nums">{{ formatMoney(received, toCurrency) }}</span>
+                  </p>
+                </div>
+              </div>
+            </template>
+          </UFormField>
+        </template>
+
         <!-- 2. Category: opens the category modal (fixed for a goal's money) -->
-        <UFormField name="categoryId" :ui="{ error: 'sr-only' }">
+        <UFormField v-else name="categoryId" :ui="{ error: 'sr-only' }">
           <template #default="{ error }">
             <button
               type="button"
@@ -374,10 +647,10 @@ function close() {
         <DayPicker v-model="pickedDay" />
 
         <button
-          v-if="walletChoices.length > 1"
+          v-if="type !== 'transfer' && walletChoices.length > 1"
           type="button"
           class="flex h-12 w-full items-center gap-3 px-4 text-left"
-          @click="walletOpen = true"
+          @click="openWalletPicker('from')"
         >
           <UIcon name="i-lucide-wallet" class="size-5 shrink-0 text-dimmed" />
           <span class="flex-1 text-sm text-muted">Wallet</span>
@@ -395,11 +668,10 @@ function close() {
             <UIcon
               name="i-lucide-pen-line"
               class="mt-0.5 size-5 shrink-0"
-              :class="noteFocused ? 'text-primary' : 'text-dimmed'"
+              :class="focusedField === 'note' ? 'text-primary' : 'text-dimmed'"
             />
             <!-- Grows to 3 lines, then scrolls; Enter closes the keyboard instead of adding a line break -->
             <UTextarea
-              ref="noteInput"
               v-model="note"
               variant="none"
               :rows="1"
@@ -412,8 +684,8 @@ function close() {
               aria-label="Note"
               class="min-w-0 flex-1"
               :ui="{ base: 'resize-none p-0 text-base leading-6 ring-0' }"
-              @focus="onNoteFocus"
-              @blur="onNoteBlur"
+              @focus="onFieldFocus('note')"
+              @blur="onFieldBlur"
               @keydown.enter.prevent="closeKeyboard"
             />
             <!-- mousedown.prevent keeps the keyboard open while clearing -->
@@ -440,7 +712,7 @@ function close() {
       <div class="flex gap-2">
         <!-- Save and stay for the next entry (new transactions only) -->
         <UButton
-          v-if="!editId"
+          v-if="!isEdit"
           type="submit"
           form="add-transaction"
           label="Add & new"
@@ -454,7 +726,15 @@ function close() {
         <UButton
           type="submit"
           form="add-transaction"
-          :label="editId ? 'Save changes' : type === 'income' ? 'Add income' : 'Add expense'"
+          :label="
+            isEdit
+              ? 'Save changes'
+              : type === 'transfer'
+                ? 'Add transfer'
+                : type === 'income'
+                  ? 'Add income'
+                  : 'Add expense'
+          "
           size="xl"
           block
           :loading="form?.loading && !addAnother"
@@ -493,6 +773,7 @@ function close() {
     </div>
 
     <CategoryModal
+      v-if="type !== 'transfer'"
       v-model:open="categoryOpen"
       :type="type"
       :account-id="accountId"
@@ -502,9 +783,9 @@ function close() {
 
     <WalletSelectModal
       v-model:open="walletOpen"
-      :wallets="walletChoices"
-      :selected-id="accountId"
-      @select="pickWallet"
+      :wallets="type === 'transfer' ? (wallets ?? []) : walletChoices"
+      :selected-id="walletTarget === 'to' ? toAccountId : accountId"
+      @select="type !== 'transfer' ? pickWallet($event) : walletTarget === 'to' ? pickTo($event) : pickFrom($event)"
     />
   </div>
 </template>

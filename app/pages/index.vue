@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { CalendarDate } from "@internationalized/date";
+import type { CalendarDate } from "@internationalized/date";
 
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(
   () => db.transactions.toArray(),
   [],
 );
+const { value: transfers } = useLiveQuery(() => db.transfers.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 
 // Home shows one wallet at a time (picked in the header), in its own currency
-const { wallet } = useActiveWallet(wallets);
+const { wallet, pick } = useActiveWallet(wallets);
+// Tapping the card (with 2+ wallets) lists them to switch
+const walletListOpen = ref(false);
 const currency = computed(() => wallet.value?.currency ?? "USD");
 const walletById = computed(
   () => new Map((wallets.value ?? []).map((w) => [w.id, w])),
@@ -18,34 +21,74 @@ const categoryById = computed(
   () => new Map((categories.value ?? []).map((c) => [c.id, c])),
 );
 
-const signed = (t: Transaction) => (t.type === "income" ? t.amount : -t.amount);
+// What an item does to the shown wallet's balance
+const signed = (t: Transaction | Transfer) =>
+  isTransfer(t)
+    ? transferChange(t, wallet.value?.id)
+    : t.type === "income"
+      ? t.amount
+      : -t.amount;
 
 const walletTransactions = computed(() =>
   (transactions.value ?? []).filter((t) => t.accountId === wallet.value?.id),
+);
+// Transfers out of and into the wallet; they move the balance but aren't income or expenses
+const walletTransfers = computed(() =>
+  (transfers.value ?? []).filter(
+    (t) =>
+      t.fromAccountId === wallet.value?.id || t.toAccountId === wallet.value?.id,
+  ),
 );
 
 const balance = computed(
   () =>
     (wallet.value?.initialBalance ?? 0) +
-    walletTransactions.value.reduce((s, t) => s + signed(t), 0),
+    [...walletTransactions.value, ...walletTransfers.value].reduce(
+      (s, t) => s + signed(t),
+      0,
+    ),
 );
 
-// Picked month (MonthPicker in the top bar) filters the whole screen
-const now = new Date();
-const thisMonth = new CalendarDate(now.getFullYear(), now.getMonth() + 1, 1);
+// Actions under the card: transfer only with another wallet to send to
+const canTransfer = computed(() => (wallets.value?.length ?? 0) > 1);
+const cardActions = computed(() => [
+  { to: "/add?type=income", label: "Income", icon: "i-lucide-arrow-down" },
+  { to: "/add?type=expense", label: "Expense", icon: "i-lucide-arrow-up" },
+  ...(canTransfer.value
+    ? [
+        {
+          to: "/add?type=transfer",
+          label: "Transfer",
+          icon: "i-lucide-arrow-left-right",
+        },
+      ]
+    : []),
+  // Every income, expense and transfer of the wallet, all months
+  { to: "/history", label: "History", icon: "i-lucide-history" },
+]);
+
+// Picked month (MonthPicker in the top bar) filters the whole screen. Months may start on another day than
+// the 1st (Settings).
+const { currentMonth, rangeOf } = useMonthStart();
+const thisMonth = currentMonth();
 const pickedMonth = shallowRef<CalendarDate>(thisMonth);
 
 const month = computed(
   () => new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1),
 );
 
-const monthTransactions = computed(() => {
-  const from = month.value;
-  const to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
-  return walletTransactions.value
+// The picked month's items, newest first
+function inMonth<T extends Transaction | Transfer>(list: T[]) {
+  const { from, to } = rangeOf(pickedMonth.value);
+  return list
     .filter((t) => t.date >= from && t.date < to)
     .sort((a, b) => b.date.getTime() - a.date.getTime());
-});
+}
+const monthTransactions = computed(() => inMonth(walletTransactions.value));
+// The date list also shows transfers
+const monthItems = computed(() =>
+  inMonth([...walletTransactions.value, ...walletTransfers.value]),
+);
 
 const income = computed(() =>
   monthTransactions.value
@@ -58,45 +101,23 @@ const expenses = computed(() =>
     .reduce((s, t) => s + t.amount, 0),
 );
 
-// Transactions list: grouped by week (date) or by category
+// Transactions list: grouped by week (date), by category, or a calendar with each day's totals
+type View = "date" | "category" | "calendar";
 const views = [
-  { label: "By date", value: "date" },
-  { label: "By category", value: "category" },
+  { label: "Date", value: "date" },
+  { label: "Category", value: "category" },
+  { label: "Calendar", value: "calendar" },
 ];
 // useState keeps the choice while visiting /add and coming back
-const view = useState<"date" | "category">(
-  "home-transactions-view",
-  () => "date",
-);
-
-// Splits newest-first transactions into days ("Today", "Yesterday", "Wed 14/10")
-function groupByDay(list: Transaction[]) {
-  const days: TransactionDay[] = [];
-  for (const t of list) {
-    const key = t.date.toDateString();
-    let day = days.at(-1);
-    if (day?.key !== key) {
-      day = {
-        key,
-        date: t.date,
-        label: weekdayLabel(t.date),
-        total: 0,
-        items: [],
-      };
-      days.push(day);
-    }
-    day.total += signed(t);
-    day.items.push(t);
-  }
-  return days;
-}
+const view = useState<View>("home-transactions-view", () => "date");
+const monthBounds = computed(() => rangeOf(pickedMonth.value));
 
 // Week groups (Monday → Sunday), newest first, each split into days
 const weeks = computed(() => {
   const thisWeek = startOfWeek(new Date()).getTime();
   const lastWeek = thisWeek - 7 * 24 * 60 * 60 * 1000;
-  const groups = new Map<number, Transaction[]>();
-  for (const t of monthTransactions.value) {
+  const groups = new Map<number, (Transaction | Transfer)[]>();
+  for (const t of monthItems.value) {
     const key = startOfWeek(t.date).getTime();
     groups.set(key, [...(groups.get(key) ?? []), t]);
   }
@@ -116,7 +137,7 @@ const weeks = computed(() => {
             ? "Last week"
             : `Week of ${formatDayMonth(start)}`,
       range: `${formatDayMonth(start)} – ${formatDayMonth(end)}`,
-      days: groupByDay(items),
+      days: groupByDay(items, signed),
     };
   });
 });
@@ -196,24 +217,28 @@ const categorySections = computed(() =>
 const openCategory = ref<string | null>(null);
 watch([pickedMonth, () => wallet.value?.id], () => (openCategory.value = null));
 
-// Tapping a transaction opens its details (edit / delete). Kept as the tapped copy so the
+// Tapping a transaction or transfer opens its details (edit / delete). Kept as the tapped copy so the
 // modal still has it while closing after a delete.
 const selected = shallowRef<Transaction>();
 const detailsOpen = ref(false);
-function showDetails(t: Transaction) {
-  selected.value = t;
-  detailsOpen.value = true;
+const selectedTransfer = shallowRef<Transfer>();
+const transferOpen = ref(false);
+function showDetails(t: Transaction | Transfer) {
+  if (isTransfer(t)) {
+    selectedTransfer.value = t;
+    transferOpen.value = true;
+  } else {
+    selected.value = t;
+    detailsOpen.value = true;
+  }
 }
 </script>
 
 <template>
   <div>
     <!-- Same header as the other tabs (no title), so the month picker sits where it does on Report.
-         The wallet and month pickers filter the whole screen; the wallet one only shows when there's a choice. -->
+         The month picker and the wallet (switched by tapping the card) filter the whole screen. -->
     <PageHeader>
-      <template #leading>
-        <WalletPicker />
-      </template>
       <template #trailing>
         <MonthPicker v-model="pickedMonth" />
       </template>
@@ -227,6 +252,8 @@ function showDetails(t: Transaction) {
         :balance="balance"
         label="Balance"
         tilt
+        :switchable="(wallets?.length ?? 0) > 1"
+        @switch="walletListOpen = true"
       >
         <div class="mt-4 grid grid-cols-2 gap-3 border-t border-white/15 pt-3">
           <div class="flex min-w-0 items-center gap-2.5">
@@ -268,6 +295,24 @@ function showDetails(t: Transaction) {
         </div>
       </WalletCard>
 
+      <!-- Quick actions under the card, wallet-app style: a plain icon tile with its name under it. Each
+           opens the add screen on that type (Transfer needs a second wallet); History lists them all. -->
+      <div class="mt-5 flex justify-center gap-5">
+        <NuxtLink
+          v-for="action in cardActions"
+          :key="action.to"
+          :to="action.to"
+          class="group flex w-16 flex-col items-center gap-2"
+        >
+          <span
+            class="flex size-13 items-center justify-center rounded-2xl bg-muted text-highlighted transition-[transform,background-color] group-active:scale-95 group-active:bg-elevated motion-reduce:group-active:scale-100"
+          >
+            <UIcon :name="action.icon" class="size-5" />
+          </span>
+          <span class="text-xs font-medium text-toned">{{ action.label }}</span>
+        </NuxtLink>
+      </div>
+
       <!-- The app's promise, scrolling edge to edge under the hero -->
       <MarqueeBanner
         text="Works offline - Your data never leaves this device"
@@ -307,7 +352,7 @@ function showDetails(t: Transaction) {
         </div>
       </div>
 
-      <!-- Transactions: by date (weeks) or by category -->
+      <!-- Transactions: by date (weeks), by category, or as a calendar -->
       <section class="mt-8">
         <div class="flex items-center justify-between gap-3">
           <h2
@@ -323,8 +368,8 @@ function showDetails(t: Transaction) {
             variant="pill"
             size="xs"
             aria-label="Group transactions"
-            class="w-48 shrink-0"
-            @update:model-value="view = $event as 'date' | 'category'"
+            class="w-52 shrink-0"
+            @update:model-value="view = $event as View"
           />
         </div>
 
@@ -376,13 +421,35 @@ function showDetails(t: Transaction) {
             hide-currency
             :category-by-id="categoryById"
             :wallet-by-id="walletById"
+            :wallet-id="wallet?.id"
             @update:open="setWeekOpen(week.key, $event)"
             @select="showDetails"
           />
         </div>
 
         <!-- Categories: Expenses then Income, one card per category, biggest first -->
+        <!-- Calendar: each day's income and expenses, then the tapped day's list -->
+        <TransactionCalendar
+          v-if="weeks.length && view === 'calendar'"
+          :from="monthBounds.from"
+          :to="monthBounds.to"
+          :items="monthItems"
+          :currency="currency"
+          :wallet-id="wallet?.id"
+          :category-by-id="categoryById"
+          :wallet-by-id="walletById"
+          class="mt-3"
+          @select="showDetails"
+        />
+
         <div v-if="weeks.length && view === 'category'" class="mt-3 space-y-6">
+          <!-- Transfers have no category, so a month of only transfers has nothing here -->
+          <p
+            v-if="!categorySections.length"
+            class="rounded-2xl bg-muted px-4 py-6 text-center text-sm font-medium text-muted"
+          >
+            Only transfers this month
+          </p>
           <div v-for="section in categorySections" :key="section.type">
             <div class="flex items-baseline justify-between gap-3 px-1">
               <h3 class="text-sm font-semibold text-toned">
@@ -425,6 +492,18 @@ function showDetails(t: Transaction) {
       :category="selected && categoryById.get(selected.categoryId)"
       :wallet="selected && walletById.get(selected.accountId)"
       :show-wallet="(wallets?.length ?? 0) > 1"
+    />
+    <WalletSelectModal
+      v-model:open="walletListOpen"
+      :wallets="wallets ?? []"
+      :selected-id="wallet?.id"
+      manage
+      @select="pick"
+    />
+    <TransferModal
+      v-model:open="transferOpen"
+      :transfer="selectedTransfer"
+      :wallet-by-id="walletById"
     />
   </div>
 </template>

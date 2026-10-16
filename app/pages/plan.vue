@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDate } from "@internationalized/date";
+import type { CalendarDate } from "@internationalized/date";
 
 // My Plan (ui/ref1, right screen): the picked wallet's savings goals with progress against their due date,
 // then its budgets for the picked month as bars (each month starts empty; earlier budgets can be copied in)
@@ -16,8 +16,6 @@ const { wallet } = useActiveWallet(wallets);
 const accountId = computed(() => wallet.value?.id);
 const currency = computed(() => wallet.value?.currency ?? "USD");
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
-
-const now = new Date();
 
 // --- Goals ---
 
@@ -67,9 +65,10 @@ async function removeGoal(card: GoalCardData) {
 
 // --- Budgets: set month by month; the picked month's spending per budget against its limit ---
 
-const pickedMonth = shallowRef(new CalendarDate(now.getFullYear(), now.getMonth() + 1, 1));
-const month = computed(() => new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1));
-const pickedKey = computed(() => monthKey(month.value));
+// Months may start on another day than the 1st (Settings); a budget's month is the one it's named after
+const { currentMonth, rangeOf } = useMonthStart();
+const pickedMonth = shallowRef<CalendarDate>(currentMonth());
+const pickedKey = computed(() => monthKey(new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1)));
 const walletBudgets = computed(() => (budgets.value ?? []).filter((b) => b.accountId === accountId.value));
 const monthBudgets = computed(() => walletBudgets.value.filter((b) => b.month === pickedKey.value));
 
@@ -91,8 +90,7 @@ const previous = computed(() => {
 
 // The picked month's expenses in this wallet
 const monthExpenses = computed(() => {
-  const from = month.value;
-  const to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
+  const { from, to } = rangeOf(pickedMonth.value);
   return (transactions.value ?? []).filter(
     (t) => t.type === "expense" && t.accountId === accountId.value && t.date >= from && t.date < to,
   );

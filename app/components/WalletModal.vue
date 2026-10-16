@@ -7,7 +7,7 @@ import * as v from "valibot";
 const props = defineProps<{ wallet?: Account; canDelete?: boolean }>();
 const open = defineModel<boolean>("open", { required: true });
 
-const noUsage = { transactions: 0, goals: 0, budgets: 0 };
+const noUsage = { transactions: 0, transfers: 0, goals: 0, budgets: 0 };
 const { value: usage } = useLiveQuery(
   () => (props.wallet ? walletUsage(props.wallet.id) : noUsage),
   noUsage,
@@ -70,12 +70,15 @@ const deleteDescription = computed(() => {
   const u = usage.value ?? noUsage;
   const parts = [
     u.transactions && plural(u.transactions, "transaction"),
+    u.transfers && plural(u.transfers, "transfer"),
     u.goals && plural(u.goals, "goal"),
     u.budgets && plural(u.budgets, "budget"),
   ].filter(Boolean);
-  return parts.length
+  const gone = parts.length
     ? `${props.wallet?.name} and its ${parts.join(", ")} will be gone for good.`
     : `${props.wallet?.name} will be gone for good.`;
+  // A transfer's other side goes too, which changes the other wallet's balance
+  return u.transfers ? `${gone} The other wallets' balances change by those transfers.` : gone;
 });
 
 async function remove() {
@@ -138,7 +141,7 @@ async function remove() {
           <AmountField v-model="state.balance" name="balance" label="Starting balance" :currency="state.currency" />
         </div>
         <p v-if="currencyLocked" class="-mt-2 text-sm text-muted">
-          The currency can't change once a wallet has transactions, goals or budgets.
+          The currency can't change once a wallet has transactions, transfers, goals or budgets.
         </p>
 
         <div class="flex gap-2">

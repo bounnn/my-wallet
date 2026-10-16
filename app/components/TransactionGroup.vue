@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Collapsible block of transactions (a week): header with label, range/count and net total,
-// then the transactions split by day. Meant to sit inside a .surface-card.
+// Collapsible block of transactions and transfers (a week): header with label, range/count and net total,
+// then the items split by day. Meant to sit inside a .surface-card.
 const props = defineProps<{
   label: string;
   sublabel: string;
@@ -8,11 +8,13 @@ const props = defineProps<{
   currency: string;
   categoryById: Map<number, Category>;
   walletById: Map<number, Account>;
+  // The wallet the list is for, which tells a transfer's direction
+  walletId?: number;
   // Skip the code on the header and rows when the screen already shows the currency
   hideCurrency?: boolean;
 }>();
 const open = defineModel<boolean>("open", { default: false });
-defineEmits<{ select: [transaction: Transaction] }>();
+defineEmits<{ select: [item: Transaction | Transfer] }>();
 
 const total = computed(() => props.days.reduce((s, d) => s + d.total, 0));
 const count = computed(() => props.days.reduce((s, d) => s + d.items.length, 0));
@@ -64,15 +66,24 @@ const formatSigned = (minor: number) => `${minor > 0 ? "+" : ""}${formatAmount(m
           <span class="font-medium text-toned tabular-nums">{{ formatSigned(day.total) }}</span>
         </div>
         <ul class="divide-y divide-default">
-          <TransactionRow
-            v-for="t in day.items"
-            :key="t.id"
-            :transaction="t"
-            :category="categoryById.get(t.categoryId)"
-            :wallet="walletById.get(t.accountId)"
-            :hide-currency="hideCurrency"
-            @select="$emit('select', $event)"
-          />
+          <template v-for="t in day.items" :key="isTransfer(t) ? `transfer-${t.id}` : t.id">
+            <TransferRow
+              v-if="isTransfer(t)"
+              :transfer="t"
+              :wallet-id="walletId"
+              :wallet-by-id="walletById"
+              :hide-currency="hideCurrency"
+              @select="$emit('select', $event)"
+            />
+            <TransactionRow
+              v-else
+              :transaction="t"
+              :category="categoryById.get(t.categoryId)"
+              :wallet="walletById.get(t.accountId)"
+              :hide-currency="hideCurrency"
+              @select="$emit('select', $event)"
+            />
+          </template>
         </ul>
       </div>
     </template>

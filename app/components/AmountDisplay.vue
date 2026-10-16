@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // The add screen's amount, typed on the keypad: label (or `error`) and currency on top, then the big signed number,
 // or the calculator sum while one is typed. A blinking caret shows while the keypad is up (`typing`).
+// A transfer's amount has no sign: it leaves one wallet and lands in another.
 const props = defineProps<{
   text: string;
   currency: string;
-  type: Transaction["type"];
+  type: Transaction["type"] | "transfer";
   typing?: boolean;
   error?: string | boolean;
 }>();
@@ -34,7 +35,7 @@ const tone = computed(() =>
       <p class="flex min-w-0 flex-1 items-baseline gap-1.5 font-display font-bold tracking-tight tabular-nums" aria-live="polite">
         <span class="text-2xl text-dimmed">{{ currencySymbol(currency) }}</span>
         <span class="truncate transition-colors" :class="[size, tone]"
-          ><template v-if="!isExpression">{{ type === "income" ? "+" : "-" }}</template>{{ shown }}</span
+          ><template v-if="!isExpression && type !== 'transfer'">{{ type === "income" ? "+" : "-" }}</template>{{ shown }}</span
         >
         <span v-if="typing" class="caret h-9 w-0.5 self-center rounded-full bg-primary" aria-hidden="true" />
       </p>

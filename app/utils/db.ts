@@ -48,6 +48,24 @@ export interface Transaction {
   createdAt: Date;
 }
 
+// Money moved from one wallet to another. Kept apart from transactions, so it changes both balances
+// without counting as income or expense (report, budgets and goals don't see it).
+export interface Transfer {
+  id: number;
+  fromAccountId: number;
+  toAccountId: number;
+  // Sent, in minor units of the sending wallet's currency
+  amount: number;
+  // Received, in minor units of the receiving wallet's currency (the same as amount when the currencies match)
+  toAmount: number;
+  // Exchange rate as typed: 1 unit of the sending currency = rate units of the receiving one. Only set
+  // when the currencies differ.
+  rate?: number;
+  note?: string;
+  date: Date;
+  createdAt: Date;
+}
+
 // Savings goal in one wallet, backed by its own expense category (which holds the name, icon and color).
 // Adding money is an expense in that category, taking it out an income, so
 // saved = initialSaved + expenses - incomes in the goal's category, from the goal's wallet.
@@ -88,7 +106,7 @@ export interface TransactionDay {
   date: Date;
   label: string;
   total: number;
-  items: Transaction[];
+  items: (Transaction | Transfer)[];
 }
 
 export const db = new Dexie("my-wallet") as Dexie & {
@@ -97,6 +115,7 @@ export const db = new Dexie("my-wallet") as Dexie & {
   transactions: EntityTable<Transaction, "id">;
   goals: EntityTable<Goal, "id">;
   budgets: EntityTable<Budget, "id">;
+  transfers: EntityTable<Transfer, "id">;
 };
 
 // Starter categories so a transaction can be added right after onboarding
@@ -239,6 +258,9 @@ db.version(7)
           starter && oldStarterColors[key] === c.color ? starter.color : (legacyColors[c.color] ?? c.color ?? "blue");
       }),
   );
+
+// v8: transfers between wallets
+db.version(8).stores({ transfers: "++id, fromAccountId, toAccountId, date" });
 
 // New databases skip upgrades, so seed them on creation
 db.on("populate", (tx) => tx.table("categories").bulkAdd(defaultCategories));

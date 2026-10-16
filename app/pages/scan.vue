@@ -25,7 +25,13 @@ const reading = ref(true);
 // The image being read (0-based) and how far along it is (0–1)
 const readIndex = ref(0);
 const readProgress = ref(0);
-const overallProgress = computed(() => (readIndex.value + readProgress.value) / Math.max(files.length, 1));
+// Only ever moves right: a tick that would pull it back (a pass starting over, a late tick) is ignored
+let shownProgress = 0;
+const overallProgress = computed(() => {
+  const now = Math.min((readIndex.value + readProgress.value) / Math.max(files.length, 1), 1);
+  shownProgress = Math.max(shownProgress, now);
+  return shownProgress;
+});
 const readError = ref("");
 // Deep, so ticking and suggestions update in place. Each day is kept raw: a CalendarDate has private fields,
 // which break inside a reactive proxy.
@@ -124,7 +130,10 @@ onMounted(async () => {
     readIndex.value = image;
     readProgress.value = 0;
     try {
-      const text = await readImage(file, (p) => (readProgress.value = p));
+      // This image's ticks only, between 0 and 1
+      const text = await readImage(file, (p) => {
+        if (readIndex.value === image) readProgress.value = Math.min(Math.max(p, readProgress.value), 1);
+      });
       found.push(...findPayments(text).map((p) => ({ ...p, image })));
     } catch (err) {
       failed++;
@@ -268,7 +277,12 @@ function close() {
                 : "Reading the bill on this phone"
           }}
         </p>
-        <UProgress :model-value="overallProgress ? Math.round(overallProgress * 100) : null" />
+        <!-- The mask makes Safari clip the moving bar to the rounded track; without it the bar can show past
+             the track's left edge (same fix as WalletCard) -->
+        <UProgress
+          :model-value="overallProgress ? Math.round(overallProgress * 100) : null"
+          :ui="{ base: '[-webkit-mask-image:-webkit-radial-gradient(white,black)]' }"
+        />
       </div>
 
       <div v-else-if="readError" class="rounded-2xl bg-muted p-4">

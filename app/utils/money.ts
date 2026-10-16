@@ -38,8 +38,12 @@ export function formatMoneyParts(minor: number, currency: string) {
 // Amount typed in a text field, regrouped as you type ("1250.5" → "1,250.5"); drops anything that isn't
 // a digit or the first ".", and extra decimals for the currency
 export function groupAmountInput(text: string, currency: string) {
+  return groupNumberInput(text, currencyDigits(currency));
+}
+
+// Same for any number with up to `digits` decimals (e.g. an exchange rate)
+export function groupNumberInput(text: string, digits: number) {
   const [whole = "", ...rest] = text.replace(/[^\d.]/g, "").split(".");
-  const digits = currencyDigits(currency);
   const fraction = rest.length && digits ? rest.join("").slice(0, digits) : undefined;
   if (!whole && fraction === undefined) return "";
   return formatAmountInput(fraction === undefined ? whole : `${whole || "0"}.${fraction}`);
@@ -47,9 +51,15 @@ export function groupAmountInput(text: string, currency: string) {
 
 // Typed amount text ("1,250.50") → minor units; commas are grouping. NaN when it isn't a number.
 export function parseAmount(text: string, currency: string) {
+  const n = parseNumberInput(text);
+  return Number.isNaN(n) ? n : toMinor(n, currency);
+}
+
+// Typed number text ("2,150.5") → number; NaN when it isn't one
+export function parseNumberInput(text: string) {
   const clean = text.replaceAll(",", "").trim();
   if (!/^\d*\.?\d*$/.test(clean) || !/\d/.test(clean)) return Number.NaN;
-  return toMinor(Number.parseFloat(clean), currency);
+  return Number.parseFloat(clean);
 }
 
 // Text size for a big card amount: long ones (e.g. LAK) shrink instead of breaking mid-number

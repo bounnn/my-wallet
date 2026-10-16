@@ -13,6 +13,19 @@ export function formatDate(date: Date) {
   return `${dd}/${mm}/${date.getFullYear()}`;
 }
 
+// A month can start on another day than the 1st (e.g. payday, set in Settings; 1-28 so every month has it).
+// It's named after the calendar month it starts in: starting on the 25th, "October" runs 25/10 to 24/11.
+// `month` is 1-12; the range is [from, to).
+export function monthRange(year: number, month: number, startDay: number) {
+  return { from: new Date(year, month - 1, startDay), to: new Date(year, month, startDay) };
+}
+
+// The month (year, 1-12) a date falls in
+export function monthOf(date: Date, startDay: number) {
+  const start = date.getDate() >= startDay ? date : new Date(date.getFullYear(), date.getMonth() - 1, 1);
+  return { year: start.getFullYear(), month: start.getMonth() + 1 };
+}
+
 // Month as "YYYY-MM", e.g. "2026-10" (budgets are stored per month); sorts in date order
 export function monthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;

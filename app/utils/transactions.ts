@@ -1,4 +1,5 @@
-import { db, type Transaction } from "./db";
+import { db, type Transaction, type TransactionDay, type Transfer } from "./db";
+import { weekdayLabel } from "./date";
 import { UserError } from "./error";
 import { goalByCategory, loadGoalSaved } from "./goals";
 import { formatMoney } from "./money";
@@ -43,4 +44,21 @@ export function deleteTransaction(transaction: Transaction) {
 
 export function restoreTransaction(transaction: Transaction) {
   return db.transactions.add(transaction);
+}
+
+// Splits newest-first items into days ("Today", "Yesterday", "Wed 14/10"), each with its net total.
+// `change` is what an item does to the shown wallet's balance.
+export function groupByDay(list: (Transaction | Transfer)[], change: (item: Transaction | Transfer) => number) {
+  const days: TransactionDay[] = [];
+  for (const t of list) {
+    const key = t.date.toDateString();
+    let day = days.at(-1);
+    if (day?.key !== key) {
+      day = { key, date: t.date, label: weekdayLabel(t.date), total: 0, items: [] };
+      days.push(day);
+    }
+    day.total += change(t);
+    day.items.push(t);
+  }
+  return days;
 }

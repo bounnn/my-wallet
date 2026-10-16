@@ -2,10 +2,13 @@
 // Navy wallet card (ui/ref6.png): seigaiha waves in the top-right corner, name on top, balance at the bottom,
 // optional footer slot. With `tilt` it leans with the phone, a light reflection slides across it and a glow
 // underneath drifts the other way (on iOS, the first tap on the page turns the motion on).
+// With `switchable` the whole card is a button that emits switch (home opens the wallet list from it), and a
+// chevron next to the name says so.
 const props = withDefaults(
-  defineProps<{ name: string; currency: string; balance: number; label?: string; tilt?: boolean }>(),
+  defineProps<{ name: string; currency: string; balance: number; label?: string; tilt?: boolean; switchable?: boolean }>(),
   { label: "Account balance" },
 );
+defineEmits<{ switch: [] }>();
 
 const root = useTemplateRef<HTMLElement>("root");
 if (props.tilt) useDeviceTilt(root);
@@ -21,7 +24,13 @@ if (props.tilt) useDeviceTilt(root);
     <!-- No overflow-hidden: the card keeps its 1.586 ratio but can grow if the footer needs more room -->
     <div
       class="card-finish navy-card relative isolate aspect-[1.586] w-full rounded-2xl p-5 text-white shadow-[0_24px_48px_-16px_rgb(17_31_87/0.8)] ring-1 ring-inset ring-white/10"
-      :class="tilt && 'tilt-card'"
+      :class="[tilt && 'tilt-card', switchable && 'cursor-pointer']"
+      :role="switchable ? 'button' : undefined"
+      :tabindex="switchable ? 0 : undefined"
+      :aria-label="switchable ? `${name}. Switch wallet` : undefined"
+      :aria-haspopup="switchable ? 'dialog' : undefined"
+      @click="switchable && $emit('switch')"
+      @keydown.enter.space.prevent="switchable && $emit('switch')"
     >
       <!-- Waves and light reflection clipped to the rounded corners. Safari doesn't round an <svg>'s content, and
            while the card is tilting it drops overflow clipping on rounded corners unless there's a mask -->
@@ -34,7 +43,16 @@ if (props.tilt) useDeviceTilt(root);
       </div>
 
       <div class="relative flex h-full flex-col">
-        <span class="truncate font-display text-lg font-semibold">{{ name || "Main Wallet" }}</span>
+        <span class="flex min-w-0 items-center gap-2 self-start">
+          <span class="truncate font-display text-lg font-semibold">{{ name || "Main Wallet" }}</span>
+          <span
+            v-if="switchable"
+            aria-hidden="true"
+            class="flex size-6 shrink-0 items-center justify-center rounded-lg bg-white/12 ring-1 ring-white/15 ring-inset"
+          >
+            <UIcon name="i-lucide-chevrons-up-down" class="size-3.5 text-white/80" />
+          </span>
+        </span>
 
         <div class="mt-auto">
           <!-- Currency sits in the muted line above the number; on home it's the only place it's shown -->

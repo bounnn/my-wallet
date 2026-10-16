@@ -4,6 +4,7 @@ useHead({ title: "Settings" });
 
 const { value: wallets } = useLiveQuery(() => db.accounts.toArray(), []);
 const { value: transactions } = useLiveQuery(() => db.transactions.toArray(), []);
+const { value: transfers } = useLiveQuery(() => db.transfers.toArray(), []);
 const { value: categories } = useLiveQuery(() => db.categories.toArray(), []);
 const { value: goals } = useLiveQuery(() => db.goals.toArray(), []);
 
@@ -27,7 +28,8 @@ const walletRows = computed(() =>
       w.initialBalance +
       (transactions.value ?? [])
         .filter((t) => t.accountId === w.id)
-        .reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0),
+        .reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0) +
+      (transfers.value ?? []).reduce((s, t) => s + transferChange(t, w.id), 0),
   })),
 );
 
@@ -37,6 +39,11 @@ function openWallet(wallet?: Account) {
   editingWallet.value = wallet;
   walletModalOpen.value = true;
 }
+
+// --- Month: the day months start on ---
+
+const { startDay } = useMonthStart();
+const monthStartOpen = ref(false);
 
 // --- Categories by type; goals' categories are edited on the plan page, deleted ones are hidden ---
 
@@ -204,6 +211,21 @@ async function erase() {
         </div>
       </section>
 
+      <!-- Month: the day months start on (e.g. payday) -->
+      <section class="mt-8">
+        <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Month</h2>
+        <button
+          type="button"
+          class="surface-card mt-3 flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors hover:bg-elevated"
+          @click="monthStartOpen = true"
+        >
+          <IconTile icon="i-lucide-calendar-range" size="sm" />
+          <span class="min-w-0 flex-1 truncate font-medium text-highlighted">Starts on</span>
+          <span class="shrink-0 font-display font-semibold text-highlighted tabular-nums">Day {{ startDay }}</span>
+          <UIcon name="i-lucide-chevron-right" class="size-5 shrink-0 text-dimmed" />
+        </button>
+      </section>
+
       <!-- Backup: the only copy of the data is on this device -->
       <section class="mt-8">
         <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">Backup</h2>
@@ -265,6 +287,7 @@ async function erase() {
 
     <WalletModal v-model:open="walletModalOpen" :wallet="editingWallet" :can-delete="walletRows.length > 1" />
     <CategoryEditModal v-model:open="categoryModalOpen" :category="editingCategory" :type="categoryType" />
+    <MonthStartModal v-model:open="monthStartOpen" />
     <ConfirmModal
       v-model:open="restoreOpen"
       title="Restore this backup?"

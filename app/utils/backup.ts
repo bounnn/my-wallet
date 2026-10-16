@@ -6,19 +6,20 @@ import { type CategoryColor, categoryColorKeys, db, defaultCategories, legacyCol
 // Backup file: every table as JSON (dates become ISO strings), restored by replacing all data.
 // Bump `version` if the shape changes, and keep reading older ones.
 // v2: goals and budgets have a wallet (accountId); v1 files get one on restore, like the db's v6 upgrade.
-const BACKUP_VERSION = 2;
+// v3: transfers between wallets; older files have none.
+const BACKUP_VERSION = 3;
 
-const tables = () => [db.accounts, db.categories, db.transactions, db.goals, db.budgets];
+const tables = () => [db.accounts, db.categories, db.transactions, db.goals, db.budgets, db.transfers];
 
 export async function exportBackup() {
-  const [accounts, categories, transactions, goals, budgets] = await Promise.all(
+  const [accounts, categories, transactions, goals, budgets, transfers] = await Promise.all(
     tables().map((t) => t.toArray()),
   );
   return {
     app: "my-wallet",
     version: BACKUP_VERSION,
     exportedAt: new Date(),
-    data: { accounts, categories, transactions, goals, budgets },
+    data: { accounts, categories, transactions, goals, budgets, transfers },
   };
 }
 
@@ -112,6 +113,22 @@ const backupSchema = v.object({
         createdAt: date,
       }),
     ),
+    transfers: v.optional(
+      v.array(
+        v.object({
+          id,
+          fromAccountId: id,
+          toAccountId: id,
+          amount: minor,
+          toAmount: minor,
+          rate: v.optional(v.pipe(v.number(), v.minValue(0))),
+          note: v.optional(v.string()),
+          date,
+          createdAt: date,
+        }),
+      ),
+      [],
+    ),
   }),
 });
 
@@ -140,7 +157,7 @@ export function parseBackup(text: string): Backup {
 
 // Replaces everything on this device with the backup
 export async function restoreBackup(backup: Backup) {
-  const { accounts, categories, transactions } = backup.data;
+  const { accounts, categories, transactions, transfers } = backup.data;
   // v1 backups: goals go to the first wallet in their currency, budgets to the main wallet
   const main = accounts[0]!;
   const goals = backup.data.goals.map((g) => ({
@@ -155,6 +172,7 @@ export async function restoreBackup(backup: Backup) {
     await db.transactions.bulkAdd(transactions);
     await db.goals.bulkAdd(goals);
     await db.budgets.bulkAdd(budgets);
+    await db.transfers.bulkAdd(transfers);
   });
 }
 

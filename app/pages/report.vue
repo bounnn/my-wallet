@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDate } from "@internationalized/date";
+import type { CalendarDate } from "@internationalized/date";
 
 useHead({ title: "Report" });
 
@@ -14,9 +14,9 @@ const { wallet } = useActiveWallet(wallets);
 const currency = computed(() => wallet.value?.currency ?? "USD");
 const categoryById = computed(() => new Map((categories.value ?? []).map((c) => [c.id, c])));
 
-const now = new Date();
-const pickedMonth = shallowRef(new CalendarDate(now.getFullYear(), now.getMonth() + 1, 1));
-const month = computed(() => new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1));
+// Months may start on another day than the 1st (Settings)
+const { currentMonth, rangeOf } = useMonthStart();
+const pickedMonth = shallowRef<CalendarDate>(currentMonth());
 
 const type = ref<Transaction["type"]>("expense");
 const types = [
@@ -37,12 +37,12 @@ function inRange(from: Date, to: Date) {
   );
 }
 
-const monthTransactions = computed(() =>
-  inRange(month.value, new Date(month.value.getFullYear(), month.value.getMonth() + 1, 1)),
-);
-const lastMonthTransactions = computed(() =>
-  inRange(new Date(month.value.getFullYear(), month.value.getMonth() - 1, 1), month.value),
-);
+const inMonth = (offset: number) => {
+  const { from, to } = rangeOf(pickedMonth.value, offset);
+  return inRange(from, to);
+};
+const monthTransactions = computed(() => inMonth(0));
+const lastMonthTransactions = computed(() => inMonth(-1));
 
 const total = computed(() => monthTransactions.value.reduce((s, t) => s + t.amount, 0));
 
@@ -83,15 +83,17 @@ const segments = computed(() =>
 // Trend view: the picked month and the 5 before it, oldest first
 const shortMonth = new Intl.DateTimeFormat(undefined, { month: "short" });
 const longMonth = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+const pickedMonthName = computed(() =>
+  longMonth.format(new Date(pickedMonth.value.year, pickedMonth.value.month - 1, 1)),
+);
 const monthTotals = computed(() =>
   Array.from({ length: 6 }, (_, i) => {
-    const from = new Date(month.value.getFullYear(), month.value.getMonth() - 5 + i, 1);
-    const to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
+    const { from } = rangeOf(pickedMonth.value, i - 5);
     return {
       key: from.toISOString(),
       label: shortMonth.format(from),
       title: longMonth.format(from),
-      total: inRange(from, to).reduce((s, t) => s + t.amount, 0),
+      total: inMonth(i - 5).reduce((s, t) => s + t.amount, 0),
     };
   }),
 );
@@ -209,7 +211,7 @@ function change(c: { total: number; last: number }) {
       <section class="mt-8">
         <div class="flex items-baseline justify-between gap-3">
           <h2 class="font-display text-lg font-semibold tracking-tight text-highlighted">All {{ typeName.toLowerCase() }}</h2>
-          <p class="flex items-baseline gap-1.5 text-sm text-muted">
+          <p v-if="byCategory.length" class="flex items-baseline gap-1.5 text-sm text-muted">
             Total
             <span class="font-display text-base font-semibold text-highlighted tabular-nums">
               {{ formatAmount(total, currency) }}
@@ -217,9 +219,41 @@ function change(c: { total: number; last: number }) {
           </p>
         </div>
 
-        <p v-if="!byCategory.length" class="mt-3 rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted">
-          No {{ typeName.toLowerCase() }} this month
-        </p>
+        <!-- Empty: faded placeholder cards shaped like the category cards (like home's empty list), then what's
+             missing and a way to add the first one -->
+        <div v-if="!byCategory.length" class="mt-3 overflow-hidden rounded-2xl bg-muted">
+          <ul aria-hidden="true" class="space-y-3 p-3 mask-[linear-gradient(to_bottom,black,transparent)]">
+            <li v-for="i in 2" :key="i" class="rounded-2xl bg-elevated/50 p-4">
+              <div class="flex items-center gap-3">
+                <span class="size-10 shrink-0 rounded-2xl bg-elevated" />
+                <span class="flex-1 space-y-2">
+                  <span class="block h-2.5 rounded-full bg-elevated" :class="i === 1 ? 'w-28' : 'w-20'" />
+                  <span class="block h-2 w-14 rounded-full bg-elevated/60" />
+                </span>
+                <span class="h-2.5 w-14 rounded-full bg-elevated" />
+              </div>
+              <span class="mt-4 block h-3 rounded-full bg-elevated/60">
+                <span class="block h-full rounded-full bg-elevated" :class="i === 1 ? 'w-3/5' : 'w-1/3'" />
+              </span>
+            </li>
+          </ul>
+          <div class="flex flex-col items-center px-6 pb-6 text-center">
+            <p class="font-display font-semibold text-highlighted">
+              No {{ typeName.toLowerCase() }} in {{ pickedMonthName }}
+            </p>
+            <p class="mt-1 text-sm text-muted">
+              {{ type === "expense" ? "Spending" : "Money coming in" }} shows up here by category.
+            </p>
+            <UButton
+              :to="`/add?type=${type}`"
+              :label="type === 'expense' ? 'Add expense' : 'Add income'"
+              icon="i-lucide-plus"
+              color="neutral"
+              variant="soft"
+              class="mt-4 h-11 justify-center bg-elevated px-5"
+            />
+          </div>
+        </div>
 
         <ul v-else class="mt-3 space-y-3">
           <li v-for="c in byCategory" :key="c.id">
